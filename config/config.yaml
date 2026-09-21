@@ -1,0 +1,155 @@
+# Single source of truth for the pipeline. No script should hardcode a path,
+# URL, threshold, or credential — everything flows through this file (or
+# .env for secrets, interpolated here via ${VAR} / ${VAR:-default}).
+#
+# Validated at load time by config/config_schema.py (Pydantic Settings).
+# Loaded once via `from config.config_schema import get_config`.
+
+project:
+  name: vuln-survival-pipeline
+  version: "0.1.0"
+  timezone: UTC
+
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+  data_features: data/features
+  data_training: data/training
+  logs: logs
+
+database:
+  host: "${DB_HOST:-localhost}"
+  port: "${DB_PORT:-5432}"
+  name: "${DB_NAME:-vuln_survival}"
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  test_name: "${TEST_DB_NAME:-vuln_survival_test}"
+  schema_search_path: [staging, canonical, features, training, public]
+  pool_size: 12 # must be >= the highest per-source download concurrency (epss: 8) now that
+  # scripts/download/download_epss.py runs its DB calls via asyncio.to_thread — a thread
+  # blocked waiting for a pool checkout stalls its own task for nothing if pool_size < concurrency
+  echo_sql: false
+
+sources:
+  nvd:
+    base_url: "https://services.nvd.nist.gov/rest/json/cves/2.0"
+    api_key: "${NVD_API_KEY:-}"
+    results_per_page: 2000
+    max_date_window_days: 120 # NVD-enforced max span per pubStartDate/pubEndDate request
+    rate_limit:
+      requests_no_key: 5
+      requests_with_key: 50
+      window_seconds: 30
+    scope:
+      mode: bounded # 'bounded' | 'full_backfill'
+      bounded_lookback_days: 730 # last 2 years
+      full_backfill_start_date: "1999-01-01"
+    retry:
+      max_attempts: 5
+      backoff_base_seconds: 2
+      backoff_max_seconds: 60
+
+  epss:
+    daily_url_template: "https://epss.empiricalsecurity.com/epss_scores-{date}.csv.gz"
+    current_url: "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
+    earliest_available_date: "2021-04-14"
+    scope:
+      mode: bounded # 'bounded' | 'full_backfill'
+      bounded_lookback_days: 730
+    concurrency: 4 # Phase A ThreadPoolExecutor max_workers (see download_epss.py) — a plain
+    # sync thread pool, not asyncio; Phase B (DB load) is fully sequential and has no
+    # concurrency knob at all
+    retry:
+      max_attempts: 5
+      backoff_base_seconds: 2
+      backoff_max_seconds: 60
+
+  kev:
+    url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    retry:
+      max_attempts: 5
+      backoff_base_seconds: 2
+      backoff_max_seconds: 30
+
+  exploitdb:
+    mode: csv_index # 'csv_index' | 'full_clone'
+    files_exploits_url: "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"
+    files_shellcodes_url: "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_shellcodes.csv"
+    full_clone_repo: "https://gitlab.com/exploit-database/exploitdb.git"
+    fuzzy_match:
+      enabled: true
+      min_confidence: 0.75
+      method: rapidfuzz_token_sort_ratio
+    retry:
+      max_attempts: 5
+      backoff_base_seconds: 2
+      backoff_max_seconds: 30
+
+  cwe:
+    url: "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip"
+    retry:
+      max_attempts: 5
+      backoff_base_seconds: 2
+      backoff_max_seconds: 30
+
+cvss:
+  # Preference order used to flag exactly one cvss_metric row per CVE as
+  # is_primary=TRUE. v4.0 ranked below v3.1/v3.0 for now since NVD coverage
+  # of v4.0 scores is still sparse; revisit as adoption grows.
+  preference_order: ["3.1", "3.0", "4.0", "2.0"]
+
+cleaning:
+  vendor_alias_map_path: config/vendor_aliases.yaml
+  cve_id_regex: "^CVE-\\d{4}-\\d{4,}$"
+
+checkpoints:
+  days: [7, 14, 30] # day 0 EPSS is frequently absent at disclosure; 3 non-zero points needed for slope
+
+survival_labels:
+  # KEV-listing only. event = 1 iff the CVE appears in CISA KEV, duration =
+  # days from NVD publication to KEV dateAdded (or to the observation window
+  # end if never listed = censored). EPSS is a predictive FEATURE for this
+  # target, not part of the target itself — folding "EPSS crosses threshold"
+  # into the event definition would make the label partly a function of a
+  # feature (circularity) and would structurally empty the blind-spot
+  # subgroup (CVEs KEV lists despite low/no EPSS signal), which is this
+  # project's primary evaluation target. poc_appears/epss_threshold are kept
+  # below, disabled, so training.survival_labels.event_type keeps 'poc' and
+  # 'epss_threshold' available in its CHECK constraint for future
+  # competing-risks work — only 'kev' and 'none' are populated for now.
+  composite_event:
+    kev_added: true
+    poc_appears: false
+    epss_threshold:
+      enabled: false
+      threshold: 0.10 # configurable EPSS crossing threshold
+  observation_window_end: auto # 'auto' = max snapshot date across ingested sources, or an explicit ISO date
+  # Phase-1 policy: a (cve, checkpoint) row is EXCLUDED if the event already
+  # occurred before that checkpoint's as_of_date. 'immediate_event' is a
+  # documented alternative (label the row as an immediate event instead of
+  # excluding it) but is not implemented yet — see docs/survival_label_policy.md.
+  pre_checkpoint_event_policy: exclude
+  event_priority: [kev] # tie-break order when multiple events land on the same date — kev-only for now
+
+epss_reconstruction:
+  fill_method: forward_fill # documented policy — never backward_fill or interpolate (leakage risk)
+  pre_first_observation_policy: null_no_row # no row materialized before a CVE's first observed EPSS date
+  max_ffill_gap_days: null # null = unlimited forward-fill within available data
+
+feature_engineering:
+  cwe_base_rate:
+    min_prior_observations: 10 # below this, fall back to the global base rate
+  rolling_windows_days: [7, 30]
+  leakage_validation:
+    tolerance: 1.0e-9 # float comparison tolerance for the deletion-invariance test
+    enforce_as_of_query_only: true # activates the SQLAlchemy leakage_guard listener
+
+logging:
+  level: INFO
+  format: json
+  rotate_max_bytes: 10485760 # 10 MB
+  rotate_backup_count: 10
+
+export:
+  formats: [csv, parquet, sql]
+  dataset_version_strategy: date_stamp # e.g. training_dataset_v20260807

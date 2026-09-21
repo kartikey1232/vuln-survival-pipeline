@@ -1,0 +1,61 @@
+[project]
+name = "vuln-survival-pipeline"
+version = "0.1.0"
+description = "Trajectory-Aware Survival Analysis for Early Vulnerability Risk Prediction Using Public Threat Intelligence — data engineering pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+    "polars>=1.9",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.13",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.5",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "httpx>=0.27",
+    "tenacity>=9.0",
+    "tqdm>=4.66",
+    "rich>=13.8",
+    "python-dotenv>=1.0",
+    "rapidfuzz>=3.9",
+    "lxml>=5.3",
+    "pyarrow>=17.0",
+    "scikit-survival>=0.28.0",
+    "scikit-learn>=1.9.1",
+    "xgboost>=3.2.0",
+    "lifelines>=0.30.3",
+    "scikit-fuzzy>=0.5.0",
+]
+
+[project.scripts]
+vsp = "scripts.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "leakage: temporal-leakage proof tests, must pass before export",
+    "slow: tests that hit real network/DB at scale",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts", "database", "config"]

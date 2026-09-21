@@ -1,0 +1,74 @@
+# KEV-vendor-name -> canonical-vendor-slug translation table.
+#
+# Keys are lowercased CISA KEV `vendorProject` display strings (e.g.
+# "Hewlett Packard (HP)", "Check Point") — NOT CPE data. Values are the
+# canonical vendor slug in the same namespace as
+# canonical.cpe_product.vendor_normalized (which is computed purely by
+# generic string cleanup of the already-slug-like CPE vendor segment — see
+# scripts/common/vendor_normalize.py).
+#
+# This file exists ONLY to let something that reads a KEV row's
+# vendor_project text (e.g. a future vendor_historical_kev_rate feature)
+# resolve it onto the same vendor bucket used across every CVE. It is
+# NEVER applied to CPE data / canonical.cpe_product.vendor_normalized
+# directly: cpe_product exists for every CVE, KEV vendor names only exist
+# for the positive (KEV-listed) class, so keying cpe_product's
+# normalization on anything derived from KEV would leak the label into a
+# feature available for every row. See scripts/common/vendor_normalize.py's
+# module docstring.
+#
+# Entries below cover cases where generic_normalize(vendor_project) would
+# NOT plausibly match the real CPE vendor slug: multi-word display names,
+# abbreviations, "and"-joined dual-vendor KEV rows, legal-name variants,
+# and known corporate-name-vs-CPE-slug mismatches. Single-word KEV vendor
+# names not listed here (e.g. "Cisco", "Oracle", "Fortinet") are expected
+# to already collapse correctly under generic_normalize and don't need an
+# entry — but these mappings are BEST EFFORT: they have not yet been
+# verified against a real, backfilled canonical.cpe_product (this project
+# only has a 6-day NVD sample as of writing). Re-validate every entry here
+# once the full historical backfill lands and cross-check against actual
+# observed vendor_normalized values — extend or correct entries that don't
+# match, the way this file's original version asked to be extended.
+
+hewlett packard (hp): hp
+hewlett packard enterprise (hpe): hpe
+check point: checkpoint
+d-link and trendnet: d-link # dual-vendor KEV row; TRENDnet dropped — no single slug covers both, first vendor kept
+dassault systèmes: dassault_systemes
+dotnetnuke (dnn): dnn
+php group: php
+joomla!: joomla
+code aurora: codeaurora
+craft cms: craftcms
+crushftp: crushftp
+d-link: d-link
+hitachi vantara: hitachi
+kingsoft: kingsoft
+meta platforms: meta
+meta: meta
+android: google
+google: google
+micro focus: microfocus
+netgear: netgear
+nextgen healthcare: nextgen
+north grid: northgrid
+novi survey: novisurvey
+october cms: octobercms
+qnap systems: qnap
+qnap: qnap
+red hat: redhat
+schneider electric: schneider_electric
+sierra wireless: sierrawireless
+soliton systems k.k: soliton
+spreadsheet::parseexcel: spreadsheet-parseexcel
+teamt5: teamt5
+treck tcp/ip stack: treck
+trend micro: trendmicro
+vmware tanzu: vmware
+webpros: webpros
+widget factory: widgetfactory
+wing ftp server: wingftp
+zk framework: zkoss
+react native community: react-native-community
+npm package: npm
+justice av solutions: justice_av_solutions
