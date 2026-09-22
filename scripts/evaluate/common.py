@@ -255,3 +255,73 @@ def evaluate_model_per_landmark(
             budgets=budgets, n_resamples=n_resamples, seed=seed, log_every=log_every,
         )
     return results
+
+
+def paired_bootstrap_compare(
+    test_df: pd.DataFrame,
+    risk_score_model: np.ndarray,
+    risk_score_baseline: np.ndarray,
+    *,
+    label: str,
+    cve_id_col: str = "cve_id",
+    duration_col: str = "event_time",
+    event_col: str = "composite_event",
+    budgets: tuple[float, ...] = DEFAULT_BUDGETS,
+    n_resamples: int = 200,
+    seed: int = DEFAULT_SEED,
+    log_every: int = 20,
+) -> dict:
+    """Paired bootstrap: on each resample, computes BOTH risk_score_model's
+    and risk_score_baseline's metrics on the IDENTICAL resampled row set,
+    then the per-resample DIFFERENCE (model - baseline). CI is taken on
+    that difference distribution directly, which correctly accounts for
+    the correlation between the two rankings' errors on the same data
+    (a paired design gives tighter, more honest CIs than differencing two
+    independently-computed CIs would). Returns
+    {"cindex": {...}, "recall_1pct": {...}, ...} each with
+    mean_diff/ci_lower/ci_upper/excludes_zero."""
+    cve_ids = test_df[cve_id_col].values
+    duration = test_df[duration_col].clip(lower=0.5).values
+    event = test_df[event_col].values.astype(int)
+    unique_cves = np.unique(cve_ids)
+    cve_row_index = _build_cve_row_index(cve_ids)
+    rng = np.random.default_rng(seed)
+
+    diffs: dict[str, list[float]] = {"cindex": []}
+    for b in budgets:
+        diffs[f"recall_{int(b*100)}pct"] = []
+
+    point_diffs = {"cindex": fast_concordance_index(duration, risk_score_model, event)
+                   - fast_concordance_index(duration, risk_score_baseline, event)}
+    for b in budgets:
+        point_diffs[f"recall_{int(b*100)}pct"] = (
+            recall_at_budget(risk_score_model, event, b) - recall_at_budget(risk_score_baseline, event, b)
+        )
+
+    for i in range(n_resamples):
+        row_idx = _resampled_row_index(cve_row_index, unique_cves, rng)
+        d, e = duration[row_idx], event[row_idx]
+        sm, sb = risk_score_model[row_idx], risk_score_baseline[row_idx]
+
+        diffs["cindex"].append(fast_concordance_index(d, sm, e) - fast_concordance_index(d, sb, e))
+        for b in budgets:
+            diffs[f"recall_{int(b*100)}pct"].append(recall_at_budget(sm, e, b) - recall_at_budget(sb, e, b))
+
+        if log_every and (i + 1) % log_every == 0:
+            log_with_fields(
+                logger, logging.INFO, "paired bootstrap progress",
+                label=label, resample=i + 1, n_resamples=n_resamples,
+            )
+
+    out = {}
+    for metric, samples in diffs.items():
+        arr = np.array(samples)
+        arr = arr[~np.isnan(arr)]
+        ci_lower, ci_upper = float(np.percentile(arr, 2.5)), float(np.percentile(arr, 97.5))
+        out[metric] = {
+            "point_diff": point_diffs[metric], "mean_diff": float(np.mean(arr)),
+            "ci_lower": ci_lower, "ci_upper": ci_upper,
+            "excludes_zero": bool(ci_lower > 0 or ci_upper < 0),
+            "n": len(arr),
+        }
+    return out
