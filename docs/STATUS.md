@@ -210,3 +210,15 @@ checked for Cox (open item below).
   actual evaluation now uses the plan's design (recall@budget primary,
   paired bootstrap CIs) — the plan doc itself hasn't been marked
   "implemented."
+
+## Addendum: Cox stability verification (post-handoff)
+
+Confirmed Cox WAS refit on the post-CISA-fix rebuilt data (not stale):
+test C-index 0.8491 (before, source!=nvd@nist.gov filter) vs 0.8492
+(after, source=own-CNA filter) — nearly identical but numerically
+distinct, `cox_results_fast.json` timestamped 3.5 min after the rebuild's
+DB write completed, row count and `cvss_cna_missing` rate (33.66%) match
+the current table exactly. Cox's stability is real, not a stale-file
+artifact — consistent with Cox being linear and unable to exploit
+"CVSS present vs absent" as a strong categorical split the way RSF/
+XGBoost's tree structures can.
