@@ -1,13 +1,28 @@
 # models/
 
-Out of scope for this phase of the project.
+Frozen final models from the model-comparison exercise (see
+`docs/model_comparison.md`), each refit once on the full train set with
+its already-chosen (tuned on fit/val, never on test) config, via
+`scripts/models/freeze_final_models.py`.
 
-This directory is reserved for the future modeling phase: training and
-serializing the Logistic Regression, Cox Proportional Hazards, Random
-Survival Forest, and XGBoost AFT models against the training dataset
-produced by `scripts/export/export_training_dataset.py` (see
-`training.training_dataset` / `data/training/`).
+- `cox_final.pkl` / `cox_final_metadata.json`
+- `rsf_final.pkl` / `rsf_final_metadata.json`
+- `xgboost_aft_final.json` / `xgboost_aft_final_columns.json` /
+  `xgboost_aft_final_metadata.json`
+
+Each metadata JSON records the git commit hash the model was produced
+from, the data cutoff, the exact feature list
+(`MODEL_FEATURE_COLUMNS`), hyperparameters, and test-set metrics.
+
+**No further tuning of any model against test results after this
+freeze** — this is the final, reported state. A future retrain (e.g. on
+newer data) should be a new, explicitly-named freeze, not an overwrite
+of these files.
+
+RSF is not exactly reproducible run to run even with `random_state`
+fixed (see `docs/model_comparison.md`'s RSF run-to-run variance
+section and rule 8 in `CLAUDE.md`) — treat `rsf_final.pkl`'s test
+C-index as approximate.
 
 The database already has a schema-only placeholder for model output —
-`training.prediction` — so the modeling phase has a defined target to write
-into without any pipeline schema changes.
+`training.prediction` — for a future serving/inference phase.

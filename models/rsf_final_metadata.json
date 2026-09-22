@@ -1,0 +1,51 @@
+{
+  "git_commit_hash": "0456e46363f6de0dbdccb866569e61d34999bbca",
+  "frozen_at_utc": "2026-09-22T10:42:38.731745+00:00",
+  "data_cutoff": "2025-01-01 (train/test split); test observed through 2026-09-20",
+  "dataset_version": "landmark_v20260922",
+  "feature_list": [
+    "epss_pct_now",
+    "epss_pct_7d_ago",
+    "epss_pct_7d_ago_missing",
+    "epss_pct_delta_7d",
+    "epss_pct_first",
+    "epss_pct_max_to_date",
+    "days_to_first_epss",
+    "epss_model_version_at_asof",
+    "landmark_day",
+    "cvss_base_score",
+    "attack_vector",
+    "attack_complexity",
+    "privileges_required",
+    "user_interaction",
+    "confidentiality_impact",
+    "integrity_impact",
+    "availability_impact",
+    "cvss_version",
+    "cvss_cna_missing",
+    "cwe_kev_rate_expanding",
+    "cna_kev_rate_expanding",
+    "exploit_published_by_asof",
+    "days_to_first_exploit"
+  ],
+  "train_rows": 268944,
+  "train_cves": 92141,
+  "test_rows": 178756,
+  "test_cves": 60962,
+  "model_type": "RandomSurvivalForest (sksurv)",
+  "hyperparameters": {
+    "min_samples_leaf": 50,
+    "max_features": "log2",
+    "n_estimators": 200,
+    "max_samples": 20000,
+    "random_state": 0,
+    "n_jobs": -1,
+    "low_memory": true
+  },
+  "test_metrics": {
+    "test_cindex": 0.8121770379251734,
+    "test_recall_5pct": 0.48880597014925375,
+    "test_recall_10pct": 0.5746268656716418
+  },
+  "known_limitation": "Not exactly reproducible even with random_state fixed under n_jobs=-1; test C-index observed to vary by up to 0.0062 across seeds at this config (see docs/model_comparison.md RSF run-to-run variance). Treat as approximate."
+}

@@ -1,0 +1,44 @@
+{
+  "git_commit_hash": "0456e46363f6de0dbdccb866569e61d34999bbca",
+  "frozen_at_utc": "2026-09-22T10:42:38.731745+00:00",
+  "data_cutoff": "2025-01-01 (train/test split); test observed through 2026-09-20",
+  "dataset_version": "landmark_v20260922",
+  "feature_list": [
+    "epss_pct_now",
+    "epss_pct_7d_ago",
+    "epss_pct_7d_ago_missing",
+    "epss_pct_delta_7d",
+    "epss_pct_first",
+    "epss_pct_max_to_date",
+    "days_to_first_epss",
+    "epss_model_version_at_asof",
+    "landmark_day",
+    "cvss_base_score",
+    "attack_vector",
+    "attack_complexity",
+    "privileges_required",
+    "user_interaction",
+    "confidentiality_impact",
+    "integrity_impact",
+    "availability_impact",
+    "cvss_version",
+    "cvss_cna_missing",
+    "cwe_kev_rate_expanding",
+    "cna_kev_rate_expanding",
+    "exploit_published_by_asof",
+    "days_to_first_exploit"
+  ],
+  "train_rows": 268944,
+  "train_cves": 92141,
+  "test_rows": 178756,
+  "test_cves": 60962,
+  "model_type": "CoxPHFitter (lifelines)",
+  "hyperparameters": {
+    "penalizer": 0.1
+  },
+  "test_metrics": {
+    "test_cindex": 0.8492200038389744,
+    "test_recall_5pct": 0.48507462686567165,
+    "test_recall_10pct": 0.6231343283582089
+  }
+}
