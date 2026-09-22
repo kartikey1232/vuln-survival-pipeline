@@ -27,6 +27,7 @@ dependencies = [
     "xgboost>=3.2.0",
     "lifelines>=0.30.3",
     "scikit-fuzzy>=0.5.0",
+    "tabulate>=0.10.0",
 ]
 
 [project.scripts]

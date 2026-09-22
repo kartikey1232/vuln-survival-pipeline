@@ -584,6 +584,7 @@ def write_features(df: pd.DataFrame, base: pd.DataFrame) -> None:
                     "primary_cwe_id": _nn(r.primary_cwe_id),
                     "n_affected_products": int(r.product_count),
                     "vendor_count": int(r.vendor_count),
+                    "cvss_missing": bool(r.cvss_missing),
                     "epss_pct_now": _nn(r.epss_pct_now),
                     "epss_pct_7d_ago": _nn(r.epss_pct_7d_ago),
                     "epss_pct_7d_ago_missing": bool(r.epss_pct_7d_ago_missing),

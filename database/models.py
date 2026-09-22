@@ -434,6 +434,7 @@ class TrainingDataset(Base):
     cwe_historical_base_rate: Mapped[float | None] = mapped_column(Numeric(6, 5))
     n_affected_products: Mapped[int | None] = mapped_column(Integer)
     vendor_count: Mapped[int | None] = mapped_column(Integer)
+    cvss_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     epss_score_at_checkpoint: Mapped[float | None] = mapped_column(Numeric(8, 6))
     epss_percentile_at_checkpoint: Mapped[float | None] = mapped_column(Numeric(8, 6))
     epss_slope_7d: Mapped[float | None] = mapped_column(Numeric(12, 8))

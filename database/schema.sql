@@ -327,6 +327,7 @@ CREATE TABLE IF NOT EXISTS training.training_dataset (
     cwe_historical_base_rate             NUMERIC(6,5),
     n_affected_products                  INTEGER,
     vendor_count                          INTEGER,
+    cvss_missing                          BOOLEAN NOT NULL DEFAULT FALSE,
     epss_score_at_checkpoint              NUMERIC(8,6),
     epss_percentile_at_checkpoint         NUMERIC(8,6),
     epss_slope_7d                         NUMERIC(12,8),
