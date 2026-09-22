@@ -203,8 +203,6 @@ def _expanding_positive_rate(
     return numer, denom
 
 
-NVD_PRIMARY_SOURCE = "nvd@nist.gov"
-
 
 def _load_base_cve_table(engine, cvss_preference_order: list[str]) -> pd.DataFrame:
     """One row per CVE in canonical.cve, with the static features that
@@ -230,28 +228,48 @@ def _load_base_cve_table(engine, cvss_preference_order: list[str]) -> pd.DataFra
     )
     kev = pd.read_sql("SELECT cve_id, date_added FROM canonical.kev", engine, parse_dates=["date_added"])
 
-    cvss_cna = pd.read_sql(
-        "SELECT cve_id, cvss_version, base_score AS cvss_base_score, attack_vector, attack_complexity, "
-        "privileges_required, user_interaction, confidentiality_impact, integrity_impact, availability_impact "
-        f"FROM canonical.cvss_metric WHERE source != '{NVD_PRIMARY_SOURCE}'",
-        engine,
-    )
-    # among CNA-sourced rows only, pick one per CVE using the same version
-    # preference order clean_nvd.py uses for is_primary (3.1 > 3.0 > 4.0 > 2.0)
-    version_rank = {v: i for i, v in enumerate(cvss_preference_order)}
-    cvss_cna["_rank"] = cvss_cna["cvss_version"].map(version_rank).fillna(len(version_rank))
-    cvss_cna = cvss_cna.sort_values("_rank").groupby("cve_id", as_index=False).first().drop(columns="_rank")
-
-    cwe_map = pd.read_sql(f"SELECT cve_id, cwe_id FROM canonical.cve_cwe_map WHERE source != '{NVD_PRIMARY_SOURCE}'", engine)
-    primary_cwe = (
-        cwe_map.sort_values("cwe_id").groupby("cve_id", as_index=False).first()
-        .rename(columns={"cwe_id": "primary_cwe_id"})
-    )
-
     source_id = pd.read_sql(
         "SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
         "FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC",
         engine,
+    )
+
+    # STRICT rule: accept a CVSS/CWE entry only if its source EQUALS the
+    # CVE's own sourceIdentifier (the CNA that owns/reported it) — not
+    # merely "not nvd@nist.gov". The looser rule admitted CISA's own ADP
+    # (Vulnrichment) contributions (source
+    # 134c704f-9b21-4f2e-91b3-4a467353bcc0, confirmed via its
+    # ssvcData.role="CISA Coordinator" in the raw payload) — CISA runs KEV,
+    # so CISA choosing to enrich a CVE with its own CVSS/CWE is a direct
+    # circularity with the label, not a publication-time-safe signal. See
+    # docs/enrichment_leakage.md for the counts this removed.
+    cvss_cna = pd.read_sql(
+        "SELECT cm.cve_id, cm.cvss_version, cm.base_score AS cvss_base_score, cm.attack_vector, "
+        "cm.attack_complexity, cm.privileges_required, cm.user_interaction, cm.confidentiality_impact, "
+        "cm.integrity_impact, cm.availability_impact "
+        "FROM canonical.cvss_metric cm "
+        "JOIN (SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
+        "      FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC) cs "
+        "  ON cs.cve_id = cm.cve_id AND cs.source_identifier = cm.source",
+        engine,
+    )
+    # among own-CNA-sourced rows only, pick one per CVE using the same
+    # version preference order clean_nvd.py uses for is_primary (3.1 > 3.0 > 4.0 > 2.0)
+    version_rank = {v: i for i, v in enumerate(cvss_preference_order)}
+    cvss_cna["_rank"] = cvss_cna["cvss_version"].map(version_rank).fillna(len(version_rank))
+    cvss_cna = cvss_cna.sort_values("_rank").groupby("cve_id", as_index=False).first().drop(columns="_rank")
+
+    cwe_map = pd.read_sql(
+        "SELECT cwm.cve_id, cwm.cwe_id "
+        "FROM canonical.cve_cwe_map cwm "
+        "JOIN (SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
+        "      FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC) cs "
+        "  ON cs.cve_id = cwm.cve_id AND cs.source_identifier = cwm.source",
+        engine,
+    )
+    primary_cwe = (
+        cwe_map.sort_values("cwe_id").groupby("cve_id", as_index=False).first()
+        .rename(columns={"cwe_id": "primary_cwe_id"})
     )
 
     cpe = pd.read_sql(

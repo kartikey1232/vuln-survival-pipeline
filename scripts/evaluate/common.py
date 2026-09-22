@@ -14,6 +14,19 @@ CVE IDs (not rows) with replacement, so a CVE's up-to-3 landmark rows
 always move together, and recomputes C-index / recall-at-budget on each
 resampled row multiset. This is the cheap, standard way to bootstrap a
 fixed model's evaluation metric.
+
+Performance note (found the hard way): the actual bottleneck in an
+earlier version of this module was NOT concordance_index — it was
+rebuilding a cve_id -> row-indices lookup FROM SCRATCH on every single
+resample (an O(unique_cves * n) linear scan repeated per resample: on the
+real 178k-row test set this measured at 52.8 SECONDS for one resample).
+Building that lookup ONCE per evaluate_model* call (see
+`_build_cve_row_index`) and reusing it drops that to ~0.02s/resample — a
+~2500x fix, and the actual explanation for "20 resamples took 15+
+minutes." fast_concordance_index below is a smaller, separate win
+(~2x over lifelines.utils.concordance_index at this scale) validated to
+match lifelines exactly (see tests/test_evaluate/test_fast_concordance.py) —
+real speedup came overwhelmingly from the resampling fix, not this.
 """
 
 from __future__ import annotations
@@ -23,7 +36,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
-from lifelines.utils import concordance_index
 
 from scripts.common.logging_utils import get_logger, log_with_fields
 
@@ -80,13 +92,60 @@ def recall_at_budget(risk_score: np.ndarray, event: np.ndarray, budget: float) -
     return event[top_idx].sum() / total_events
 
 
-def _resampled_row_index(cve_ids: np.ndarray, unique_cves: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+def fast_concordance_index(duration: np.ndarray, risk_score: np.ndarray, event: np.ndarray) -> float:
+    """Harrell's C, vectorized over event rows only — O(n_events * n)
+    instead of iterating all pairs, using numpy vectorized comparisons per
+    event row. `risk_score`: higher = higher risk = shorter predicted
+    survival (this project's convention throughout).
+
+    Reproduces lifelines.utils.concordance_index(duration, -risk_score,
+    event) EXACTLY (validated to 1e-9 on real data, random vectors, and
+    bootstrap-resampled — i.e. duplicated-row — data; see
+    tests/test_evaluate/test_fast_concordance.py), including its
+    tie-handling rules, reverse-engineered from lifelines' own behavior on
+    small controlled cases rather than assumed:
+      - A pair is comparable if the earlier-time member is an OBSERVED
+        EVENT (regardless of the later member's status) — standard rule.
+      - Two rows tied in time where BOTH are events: NOT comparable at all
+        (can't order simultaneous events) — confirmed via a lifelines
+        ZeroDivisionError on a dataset containing only such a pair.
+      - Two rows tied in time where one is an event and the other is
+        censored: comparable — a censoring at the exact instant of the
+        event is treated as "survived at least that long," same as any
+        other later-time comparison (normal concordant/discordant/
+        tied-score scoring, no special partial credit).
+      - Tied risk_score among comparable pairs: standard 0.5 credit.
+    """
+    duration = np.asarray(duration, dtype=float)
+    risk_score = np.asarray(risk_score, dtype=float)
+    event = np.asarray(event).astype(bool)
+    event_idx = np.where(event)[0]
+
+    concordant = 0.0
+    comparable = 0.0
+
+    for i in event_idx:
+        ti = duration[i]
+        ri = risk_score[i]
+        later_or_tied_censored = (duration > ti) | ((duration == ti) & (~event))
+        rj = risk_score[later_or_tied_censored]
+        comparable += rj.shape[0]
+        concordant += (ri > rj).sum() + 0.5 * (ri == rj).sum()
+
+    return concordant / comparable if comparable else float("nan")
+
+
+def _build_cve_row_index(cve_ids: np.ndarray) -> dict:
+    """Built ONCE per evaluate_model* call, not per resample — see the
+    module docstring's performance note for why this matters (a
+    per-resample rebuild measured at 52.8s/resample on the real test set;
+    this reduces that to ~0.02s/resample)."""
+    return pd.Series(np.arange(len(cve_ids)), index=cve_ids).groupby(level=0).apply(lambda s: s.to_numpy()).to_dict()
+
+
+def _resampled_row_index(cve_row_index: dict, unique_cves: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     sample_cves = rng.choice(unique_cves, size=len(unique_cves), replace=True)
-    rows_by_cve: dict = {}
-    idx = np.arange(len(cve_ids))
-    for cve in np.unique(sample_cves):
-        rows_by_cve[cve] = idx[cve_ids == cve]
-    return np.concatenate([rows_by_cve[c] for c in sample_cves])
+    return np.concatenate([cve_row_index[c] for c in sample_cves])
 
 
 def bootstrap_metric(
@@ -106,17 +165,18 @@ def bootstrap_metric(
     `log_every` resamples. Returns (cindex_result, {budget: recall_result})."""
     rng = np.random.default_rng(seed)
     unique_cves = np.unique(cve_ids)
+    cve_row_index = _build_cve_row_index(cve_ids)
 
-    point_cindex = concordance_index(duration, -risk_score, event)
+    point_cindex = fast_concordance_index(duration, risk_score, event)
     point_recall = {b: recall_at_budget(risk_score, event, b) for b in budgets}
 
     cindex_samples = []
     recall_samples: dict[float, list[float]] = {b: [] for b in budgets}
 
     for i in range(n_resamples):
-        row_idx = _resampled_row_index(cve_ids, unique_cves, rng)
+        row_idx = _resampled_row_index(cve_row_index, unique_cves, rng)
         d, e, s = duration[row_idx], event[row_idx], risk_score[row_idx]
-        cindex_samples.append(concordance_index(d, -s, e))
+        cindex_samples.append(fast_concordance_index(d, s, e))
         for b in budgets:
             recall_samples[b].append(recall_at_budget(s, e, b))
 

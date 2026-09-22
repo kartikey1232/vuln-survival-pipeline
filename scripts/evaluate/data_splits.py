@@ -81,6 +81,21 @@ def load_splits(*, dataset_version: str = DATASET_VERSION) -> Splits:
     return Splits(fit=fit, val=val, test=test)
 
 
+def load_full_train_and_test(*, dataset_version: str = DATASET_VERSION) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The ORIGINAL train/test split (train = published < 2025-01-01,
+    censored at 2025-01-01 as stored; test unchanged) — used for the final
+    refit of a model once its hyperparameters are chosen on fit/val. NOT
+    the same as concatenating fit+val, which have different label cutoffs."""
+    engine = get_engine()
+    df = pd.read_sql(
+        f"SELECT * FROM training.training_dataset WHERE dataset_version = '{dataset_version}'",
+        engine, parse_dates=["as_of_date"],
+    )
+    df["landmark_day"] = df["checkpoint_day"]
+    is_train = df["as_of_date"] < VAL_CUTOFF
+    return df[is_train].reset_index(drop=True), df[~is_train].reset_index(drop=True)
+
+
 if __name__ == "__main__":
     splits = load_splits()
     for name, d in [("fit", splits.fit), ("val", splits.val), ("test", splits.test)]:
