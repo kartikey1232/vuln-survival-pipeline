@@ -24,9 +24,11 @@ Chosen configs (tuned on the fit/val split, never on test):
 **Cox is the strongest model on this test set** — not XGBoost-AFT, despite
 XGBoost-AFT having the more elaborate tuning process. This reordering only
 appeared after the CVSS/CWE source fix (see Limitations): before that fix,
-XGBoost-AFT and RSF both scored higher than Cox, because their tree-based
-splits could exploit the CISA-enrichment artifact more aggressively than
-Cox's linear model could.
+XGBoost-AFT and RSF both scored higher than Cox. With only ~440 training
+events, a penalized linear model has less capacity to fit any given
+artifact than the flexible tree-based learners do — consistent with Cox's
+near-zero change (0.8491→0.8492) across the fix, versus XGBoost-AFT's
+0.852→0.785 and RSF's 0.839→0.812 drops (see Limitations).
 
 ### Paired comparison vs EPSS-alone (same resamples, difference CI)
 
@@ -76,6 +78,34 @@ RSF's permutation importances, where `cna_kev_rate_expanding` and
 trajectory is worthless — Cox (linear, less prone to this failure mode)
 still benefits from the full feature set — but it's a concrete reason not to
 treat XGBoost-AFT's current tuning as final.
+
+## Cox trajectory ablation (reporting only, same feature sets as above)
+
+| Feature set | C-index | Recall@5% | Recall@10% |
+|---|---|---|---|
+| a) Full Cox | 0.8492 | 0.4851 | 0.6231 |
+| b) Minus trajectory features (same 6 dropped as XGBoost above) | 0.8600 | 0.5149 | 0.5970 |
+| c) Minus ALL EPSS features | 0.8379 | 0.4179 | 0.5709 |
+
+Paired (a) − (b), same 200 resamples: **ΔC-index = −0.0107 (95% CI −0.0196,
+−0.0012 — excludes zero)**, ΔRecall@5% = −0.0299 (95% CI −0.0948, 0.0236 —
+no), ΔRecall@10% = +0.0261 (95% CI −0.0217, 0.0755 — no).
+Paired (a) − (c): ΔC-index = +0.0114 (95% CI −0.0190, 0.0395 — no).
+
+**The trajectory-feature finding from the XGBoost ablation is not
+XGBoost-specific.** Dropping the same 6 EPSS-trajectory features
+(`epss_pct_7d_ago`, `epss_pct_7d_ago_missing`, `epss_pct_delta_7d`,
+`epss_pct_first`, `epss_pct_max_to_date`, `days_to_first_epss`) measurably
+*improves* Cox's C-index too, with a CI that excludes zero — this is a
+significant result for a linear model, which rules out "depth-6 tree
+overfitting to noisy correlated features" as the sole explanation (Cox has
+no depth or splits to overfit with). The more likely shared explanation:
+these 6 features are highly collinear with each other and with
+`epss_pct_now`, and collinearity alone degrades a penalized linear fit
+(inflated coefficient variance) independent of any tree-specific
+mechanism. Recall-based metrics do not show a significant effect for Cox
+in either direction, so this is primarily a ranking-precision effect
+(C-index), not a top-of-list effect (recall@budget) for this model.
 
 ## Blind-spot catch rate at 10% budget
 
@@ -130,9 +160,11 @@ Limitations). Any RSF number in this document should be read as "≈0.81 ±
   The rule is now "source equals the CVE's own `sourceIdentifier`" (its
   actual reporting CNA). This removed ~18% of accepted CVSS metrics and ~20%
   of accepted CWE mappings and dropped every model's test C-index
-  meaningfully (XGBoost-AFT: 0.852→0.785; RSF: 0.839→0.812; Cox: 0.849→0.849,
-  essentially unaffected — Cox's linear form apparently couldn't exploit the
-  artifact the way the tree models could). All numbers in this document are
+  meaningfully (XGBoost-AFT: 0.852→0.785; RSF: 0.839→0.812; Cox: 0.8491→0.8492,
+  essentially unaffected — with only ~440 training events, a penalized
+  linear model has less capacity to fit the removed artifact in the first
+  place than the flexible tree-based learners do, so it had less to lose
+  when that artifact was removed). All numbers in this document are
   post-fix.
 - **Validation-vs-test bias asymmetry, not fully resolved**: even after the
   fix, CVSS-presence still correlates with the label — positives are less
