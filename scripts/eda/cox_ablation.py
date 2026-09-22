@@ -1,4 +1,12 @@
 """
+HISTORICAL diagnostic — superseded by scripts/eda/cox_rebuilt_eval.py's
+own ablation section, which runs against the rebuilt (publication-time-
+only) features. This script's results (the vendor-feature-group ablation
+that helped find the enrichment leak) are reported in
+docs/enrichment_leakage.md; kept for reproducibility of that finding
+against the pre-fix schema, not for re-running now — the feature groups
+below reference the pre-fix column names.
+
 Diagnostic ablation for the preliminary Cox baseline's suspiciously high
 test C-index (0.8897 > 0.85 stop threshold, and > train's 0.8635). Refits
 the same penalizer=0.1 CoxPHFitter on train with feature groups removed,
@@ -24,13 +32,13 @@ EPSS_FEATURES = [
 CVSS_FEATURES = [
     "cvss_base_score", "attack_vector", "attack_complexity", "privileges_required",
     "user_interaction", "confidentiality_impact", "integrity_impact", "availability_impact",
-    "cvss_version", "cvss_missing",
+    "cvss_version", "cvss_cna_missing",
 ]
 CWE_FEATURES = ["cwe_kev_rate_expanding"]
-VENDOR_FEATURES = ["vendor_kev_rate_expanding", "vendor_count", "product_count"]
+CNA_FEATURES = ["cna_kev_rate_expanding"]
 EXPLOIT_FEATURES = ["exploit_published_by_asof", "days_to_first_exploit"]
 
-ALL_FEATURES = EPSS_FEATURES + CVSS_FEATURES + CWE_FEATURES + VENDOR_FEATURES + EXPLOIT_FEATURES
+ALL_FEATURES = EPSS_FEATURES + CVSS_FEATURES + CWE_FEATURES + CNA_FEATURES + EXPLOIT_FEATURES
 
 GROUPS = {
     "a) EPSS only": EPSS_FEATURES,

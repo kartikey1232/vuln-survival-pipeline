@@ -27,7 +27,7 @@ CATEGORICAL = [
     "confidentiality_impact", "integrity_impact", "availability_impact",
     "cvss_version", "epss_model_version_at_asof", "landmark_day",
 ]
-BOOLEAN = ["cvss_missing", "exploit_published_by_asof", "epss_pct_7d_ago_missing"]
+BOOLEAN = ["cvss_cna_missing", "exploit_published_by_asof", "epss_pct_7d_ago_missing"]
 
 
 def _prepare(df: pd.DataFrame) -> pd.DataFrame:

@@ -23,7 +23,7 @@ from config.config_schema import get_config
 
 _CONFIGURED_LOGGERS: set[str] = set()
 
-Category = Literal["download", "clean", "features", "labels", "pipeline", "export", "db", "test"]
+Category = Literal["download", "clean", "features", "labels", "pipeline", "export", "db", "test", "evaluate"]
 
 
 class JsonFormatter(logging.Formatter):
