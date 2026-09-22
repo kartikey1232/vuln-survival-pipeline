@@ -268,10 +268,12 @@ CREATE TABLE IF NOT EXISTS features.temporal_features (
     epss_score_at_asof_raw           NUMERIC(8,6), -- baseline / blind-spot use ONLY, never a model feature
     spans_version_transition         BOOLEAN NOT NULL DEFAULT FALSE, -- rows with TRUE are excluded from the default export; kept for sensitivity analysis
     cwe_kev_rate_expanding           NUMERIC(8,6), -- expanding-window target encoding, smoothed; see build_landmark_dataset.py
-    vendor_kev_rate_expanding        NUMERIC(8,6),
-    product_count                    INTEGER,
+    vendor_kev_rate_expanding        NUMERIC(8,6), -- unused since the enrichment-leakage fix; see docs/enrichment_leakage.md
+    product_count                    INTEGER, -- unused since the enrichment-leakage fix
     exploit_published_by_asof        BOOLEAN NOT NULL DEFAULT FALSE,
     days_to_first_exploit            INTEGER,
+    cvss_cna_missing                 BOOLEAN NOT NULL DEFAULT FALSE, -- publication-time replacement for cvss_missing
+    cna_kev_rate_expanding           NUMERIC(8,6), -- expanding-window encoding on NVD sourceIdentifier (reporting CNA)
     computed_at                      TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (cve_id, checkpoint_day)
 );
@@ -361,6 +363,8 @@ CREATE TABLE IF NOT EXISTS training.training_dataset (
     product_count                         INTEGER,
     exploit_published_by_asof             BOOLEAN NOT NULL DEFAULT FALSE,
     days_to_first_exploit                 INTEGER,
+    cvss_cna_missing                      BOOLEAN NOT NULL DEFAULT FALSE,
+    cna_kev_rate_expanding                NUMERIC(8,6),
     event_time                             INTEGER,
     censor_flag                             BOOLEAN NOT NULL,
     composite_event                         BOOLEAN NOT NULL,

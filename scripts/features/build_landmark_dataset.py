@@ -102,10 +102,18 @@ MODEL_FEATURE_COLUMNS = [
     "landmark_day",
     "cvss_base_score", "attack_vector", "attack_complexity", "privileges_required",
     "user_interaction", "confidentiality_impact", "integrity_impact", "availability_impact",
-    "cvss_version", "cvss_missing",
-    "cwe_kev_rate_expanding", "vendor_kev_rate_expanding", "vendor_count", "product_count",
+    "cvss_version", "cvss_cna_missing",
+    "cwe_kev_rate_expanding", "cna_kev_rate_expanding",
     "exploit_published_by_asof", "days_to_first_exploit",
 ]
+# vendor_kev_rate_expanding / vendor_count / product_count were REMOVED from the
+# allowlist (enrichment leakage — CPE/vendor data is NVD's own analyst-added
+# enrichment, only present once NVD reviews a CVE, which happens preferentially
+# for KEV-listed CVEs; see docs/enrichment_leakage.md). cvss_missing was
+# replaced by cvss_cna_missing for the same reason: canonical.cve.cvss_missing
+# is true only when NO CVSS at all was reported (any source), which still
+# reflects NVD's own primary-CVSS-selection work being done — the CNA-only
+# version answers "was there a CVSS score at publication time" instead.
 # Exported alongside the features but explicitly NOT model inputs.
 NON_FEATURE_COLUMNS = [
     "cve_id", "as_of_date", "split", "event_time", "event_observed",
@@ -195,28 +203,57 @@ def _expanding_positive_rate(
     return numer, denom
 
 
-def _load_base_cve_table(engine) -> pd.DataFrame:
+NVD_PRIMARY_SOURCE = "nvd@nist.gov"
+
+
+def _load_base_cve_table(engine, cvss_preference_order: list[str]) -> pd.DataFrame:
     """One row per CVE in canonical.cve, with the static features that
-    don't vary by landmark: CVSS, primary CWE, primary vendor, vendor/
-    product counts, KEV date_added (all of canonical.cve, not just the
+    don't vary by landmark: CNA-sourced CVSS/CWE only (see
+    docs/enrichment_leakage.md — NVD's OWN CVSS/CWE/CPE additions are only
+    present once an analyst has reviewed the CVE, which happens
+    preferentially for KEV-listed CVEs, so using them as features leaks
+    the label), the reporting CNA (source_identifier, from the raw staged
+    payload), and KEV date_added (all of canonical.cve, not just the
     study population — the expanding-window target encoding needs the
-    full history as its candidate pool)."""
+    full history as its candidate pool).
+
+    vendor/product identity is still loaded (kept in features.static_features
+    for reference) but is NOT used for any model feature — CPE data is
+    NVD's own enrichment with no CNA-sourced alternative, so there's no
+    publication-time-safe version of it to build a feature from."""
+    # cvss_missing here is the ORIGINAL "no CVSS from any source" concept
+    # (still valid, used only for features.static_features — unrelated to
+    # the enrichment-leakage fix); cvss_cna_missing (computed below) is the
+    # publication-time-safe replacement used as an actual model feature.
     cve = pd.read_sql(
-        "SELECT cve_id, published_date, cvss_missing FROM canonical.cve", engine,
-        parse_dates=["published_date"],
+        "SELECT cve_id, published_date, cvss_missing FROM canonical.cve", engine, parse_dates=["published_date"]
     )
     kev = pd.read_sql("SELECT cve_id, date_added FROM canonical.kev", engine, parse_dates=["date_added"])
-    cvss = pd.read_sql(
+
+    cvss_cna = pd.read_sql(
         "SELECT cve_id, cvss_version, base_score AS cvss_base_score, attack_vector, attack_complexity, "
         "privileges_required, user_interaction, confidentiality_impact, integrity_impact, availability_impact "
-        "FROM canonical.cvss_metric WHERE is_primary = true",
+        f"FROM canonical.cvss_metric WHERE source != '{NVD_PRIMARY_SOURCE}'",
         engine,
     )
-    cwe_map = pd.read_sql("SELECT cve_id, cwe_id FROM canonical.cve_cwe_map", engine)
+    # among CNA-sourced rows only, pick one per CVE using the same version
+    # preference order clean_nvd.py uses for is_primary (3.1 > 3.0 > 4.0 > 2.0)
+    version_rank = {v: i for i, v in enumerate(cvss_preference_order)}
+    cvss_cna["_rank"] = cvss_cna["cvss_version"].map(version_rank).fillna(len(version_rank))
+    cvss_cna = cvss_cna.sort_values("_rank").groupby("cve_id", as_index=False).first().drop(columns="_rank")
+
+    cwe_map = pd.read_sql(f"SELECT cve_id, cwe_id FROM canonical.cve_cwe_map WHERE source != '{NVD_PRIMARY_SOURCE}'", engine)
     primary_cwe = (
         cwe_map.sort_values("cwe_id").groupby("cve_id", as_index=False).first()
         .rename(columns={"cwe_id": "primary_cwe_id"})
     )
+
+    source_id = pd.read_sql(
+        "SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
+        "FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC",
+        engine,
+    )
+
     cpe = pd.read_sql(
         "SELECT cpe_product_id, cve_id, vendor_normalized, product_normalized FROM canonical.cpe_product", engine
     )
@@ -235,8 +272,10 @@ def _load_base_cve_table(engine) -> pd.DataFrame:
     )
 
     df = cve.merge(kev, on="cve_id", how="left")
-    df = df.merge(cvss, on="cve_id", how="left")
+    df = df.merge(cvss_cna, on="cve_id", how="left")
+    df["cvss_cna_missing"] = df["cvss_base_score"].isna()
     df = df.merge(primary_cwe, on="cve_id", how="left")
+    df = df.merge(source_id, on="cve_id", how="left")
     df = df.merge(primary_vendor, on="cve_id", how="left")
     df = df.merge(vendor_count, on="cve_id", how="left")
     df = df.merge(product_count, on="cve_id", how="left")
@@ -365,7 +404,7 @@ def build(cfg=None) -> pd.DataFrame:
     landmarks = cfg.checkpoints.days
     smoothing_weight = cfg.feature_engineering.cwe_base_rate.min_prior_observations
 
-    base = _load_base_cve_table(engine)
+    base = _load_base_cve_table(engine, cfg.cvss.preference_order)
 
     study = base[(base["published_date"].dt.date >= STUDY_START) & (base["published_date"].dt.date <= STUDY_END)].copy()
 
@@ -383,12 +422,12 @@ def build(cfg=None) -> pd.DataFrame:
 
     candidates = candidates[candidates["_has_epss_by_asof"]].drop(columns=["_has_epss_by_asof"]).reset_index(drop=True)  # condition 2
 
-    # --- CVSS + identity static features (already in `base`, join in) ---
+    # --- CVSS (CNA-sourced) + identity static features (already in `base`, join in) ---
     static_cols = [
         "cve_id", "cvss_version", "cvss_base_score", "attack_vector", "attack_complexity",
         "privileges_required", "user_interaction", "confidentiality_impact", "integrity_impact",
-        "availability_impact", "cvss_missing", "primary_cwe_id", "primary_vendor",
-        "vendor_count", "product_count", "first_exploit_date",
+        "availability_impact", "cvss_cna_missing", "primary_cwe_id", "source_identifier",
+        "primary_vendor", "vendor_count", "product_count", "first_exploit_date",
     ]
     candidates = candidates.merge(base[static_cols], on="cve_id", how="left")
 
@@ -447,7 +486,7 @@ def build(cfg=None) -> pd.DataFrame:
         candidates[out_col] = result
 
     encode("primary_cwe_id", "cwe_kev_rate_expanding")
-    encode("primary_vendor", "vendor_kev_rate_expanding")
+    encode("source_identifier", "cna_kev_rate_expanding")
 
     candidates = compute_labels(candidates, TRAIN_TEST_CUTOFF, DATA_CUTOFF)
     return candidates
@@ -545,10 +584,12 @@ def write_features(df: pd.DataFrame, base: pd.DataFrame) -> None:
                 "epss_score_at_asof_raw": _nn(r.epss_score_at_asof_raw),
                 "spans_version_transition": bool(r.spans_version_transition),
                 "cwe_kev_rate_expanding": _nn(r.cwe_kev_rate_expanding),
-                "vendor_kev_rate_expanding": _nn(r.vendor_kev_rate_expanding),
+                "vendor_kev_rate_expanding": None,  # removed from allowlist — see docs/enrichment_leakage.md
                 "product_count": int(r.product_count),
                 "exploit_published_by_asof": bool(r.exploit_published_by_asof),
                 "days_to_first_exploit": _nn(r.days_to_first_exploit),
+                "cvss_cna_missing": bool(r.cvss_cna_missing),
+                "cna_kev_rate_expanding": _nn(r.cna_kev_rate_expanding),
                 "computed_at": now,
             }
         )
@@ -584,7 +625,7 @@ def write_features(df: pd.DataFrame, base: pd.DataFrame) -> None:
                     "primary_cwe_id": _nn(r.primary_cwe_id),
                     "n_affected_products": int(r.product_count),
                     "vendor_count": int(r.vendor_count),
-                    "cvss_missing": bool(r.cvss_missing),
+                    "cvss_missing": False,  # legacy column, unused since the enrichment-leakage fix
                     "epss_pct_now": _nn(r.epss_pct_now),
                     "epss_pct_7d_ago": _nn(r.epss_pct_7d_ago),
                     "epss_pct_7d_ago_missing": bool(r.epss_pct_7d_ago_missing),
@@ -596,10 +637,12 @@ def write_features(df: pd.DataFrame, base: pd.DataFrame) -> None:
                     "epss_score_at_asof_raw": _nn(r.epss_score_at_asof_raw),
                     "spans_version_transition": bool(r.spans_version_transition),
                     "cwe_kev_rate_expanding": _nn(r.cwe_kev_rate_expanding),
-                    "vendor_kev_rate_expanding": _nn(r.vendor_kev_rate_expanding),
+                    "vendor_kev_rate_expanding": None,  # removed from allowlist — see docs/enrichment_leakage.md
                     "product_count": int(r.product_count),
                     "exploit_published_by_asof": bool(r.exploit_published_by_asof),
                     "days_to_first_exploit": _nn(r.days_to_first_exploit),
+                    "cvss_cna_missing": bool(r.cvss_cna_missing),
+                    "cna_kev_rate_expanding": _nn(r.cna_kev_rate_expanding),
                     "event_time": int(r.event_time),
                     "censor_flag": not bool(r.event_observed),
                     "composite_event": bool(r.event_observed),
@@ -656,7 +699,7 @@ def export_parquet(cfg, df: pd.DataFrame, dataset_version: str):
 def main() -> None:
     cfg = get_config()
     engine = get_engine()
-    base = _load_base_cve_table(engine)
+    base = _load_base_cve_table(engine, cfg.cvss.preference_order)
     df = build(cfg)
 
     default_df = df[~df["spans_version_transition"]]

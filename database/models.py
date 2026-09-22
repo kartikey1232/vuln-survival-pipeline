@@ -361,6 +361,9 @@ class TemporalFeatures(Base):
     product_count: Mapped[int | None] = mapped_column(Integer)
     exploit_published_by_asof: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     days_to_first_exploit: Mapped[int | None] = mapped_column(Integer)
+    # publication-time (CNA-sourced) replacements — see docs/enrichment_leakage.md
+    cvss_cna_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cna_kev_rate_expanding: Mapped[float | None] = mapped_column(Numeric(8, 6))
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -468,6 +471,8 @@ class TrainingDataset(Base):
     product_count: Mapped[int | None] = mapped_column(Integer)
     exploit_published_by_asof: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     days_to_first_exploit: Mapped[int | None] = mapped_column(Integer)
+    cvss_cna_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cna_kev_rate_expanding: Mapped[float | None] = mapped_column(Numeric(8, 6))
     event_time: Mapped[int | None] = mapped_column(Integer)
     censor_flag: Mapped[bool] = mapped_column(Boolean, nullable=False)
     composite_event: Mapped[bool] = mapped_column(Boolean, nullable=False)

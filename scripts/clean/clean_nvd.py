@@ -146,14 +146,23 @@ def _extract_cvss_rows(cve_id: str, payload: dict, preference_order: list[str]) 
     return rows
 
 
-def _extract_cwe_ids(payload: dict) -> set[str]:
-    ids: set[str] = set()
+def _extract_cwe_ids(payload: dict) -> set[tuple[str, str]]:
+    """Returns (cwe_id, source) pairs — source is the real per-weakness
+    sourceIdentifier (e.g. 'nvd@nist.gov' for NVD's own analysis, or a
+    CNA's identifier for a CNA-supplied weakness), NOT a hardcoded literal.
+    This matters because features built on top of this (see
+    scripts/features/build_landmark_dataset.py) must be able to tell CNA-
+    sourced (available at publication time) from NVD-sourced (added only
+    once NVD analyst-reviews the CVE, which happens preferentially for
+    KEV-listed CVEs — see docs/enrichment_leakage.md) CWE assignments."""
+    pairs: set[tuple[str, str]] = set()
     for w in payload.get("weaknesses", []):
+        source = w.get("source") or payload.get("sourceIdentifier") or "unknown"
         for desc in w.get("description", []):
             value = desc.get("value", "")
             if _CWE_ID_RE.match(value):
-                ids.add(value)
-    return ids
+                pairs.add((value, source))
+    return pairs
 
 
 def _extract_cpe_rows(cve_id: str, payload: dict) -> list[dict]:
@@ -235,9 +244,9 @@ def main(*, test: bool = False) -> None:
                 }
             )
 
-            for cwe_id in _extract_cwe_ids(payload):
+            for cwe_id, cwe_source in _extract_cwe_ids(payload):
                 if cwe_id in existing_cwe_ids:
-                    cwe_map_rows.append({"cve_id": cve_id, "cwe_id": cwe_id, "source": "nvd"})
+                    cwe_map_rows.append({"cve_id": cve_id, "cwe_id": cwe_id, "source": cwe_source})
                     cwe_mapped += 1
                 else:
                     cwe_skipped_missing_catalog += 1
