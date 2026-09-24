@@ -148,6 +148,28 @@ def _resampled_row_index(cve_row_index: dict, unique_cves: np.ndarray, rng: np.r
     return np.concatenate([cve_row_index[c] for c in sample_cves])
 
 
+def _summarize(point: float, samples) -> BootstrapResult:
+    arr = np.asarray(samples, dtype=float)
+    arr = arr[~np.isnan(arr)]
+    return BootstrapResult(
+        point_estimate=float(point), mean=float(np.mean(arr)),
+        ci_lower=float(np.percentile(arr, 2.5)), ci_upper=float(np.percentile(arr, 97.5)),
+        n_resamples=len(arr),
+    )
+
+
+def _summarize_diff(point_diff: float, samples) -> dict:
+    arr = np.asarray(samples, dtype=float)
+    arr = arr[~np.isnan(arr)]
+    ci_lower, ci_upper = float(np.percentile(arr, 2.5)), float(np.percentile(arr, 97.5))
+    return {
+        "point_diff": float(point_diff), "mean_diff": float(np.mean(arr)),
+        "ci_lower": ci_lower, "ci_upper": ci_upper,
+        "excludes_zero": bool(ci_lower > 0 or ci_upper < 0),
+        "n": len(arr),
+    }
+
+
 def bootstrap_metric(
     cve_ids: np.ndarray,
     duration: np.ndarray,
@@ -185,15 +207,6 @@ def bootstrap_metric(
                 logger, logging.INFO, "bootstrap progress",
                 label=log_label, resample=i + 1, n_resamples=n_resamples,
             )
-
-    def _summarize(point: float, samples: list[float]) -> BootstrapResult:
-        arr = np.array(samples)
-        arr = arr[~np.isnan(arr)]
-        return BootstrapResult(
-            point_estimate=point, mean=float(np.mean(arr)),
-            ci_lower=float(np.percentile(arr, 2.5)), ci_upper=float(np.percentile(arr, 97.5)),
-            n_resamples=len(arr),
-        )
 
     cindex_result = _summarize(point_cindex, cindex_samples)
     recall_results = {b: _summarize(point_recall[b], recall_samples[b]) for b in budgets}
@@ -313,15 +326,277 @@ def paired_bootstrap_compare(
                 label=label, resample=i + 1, n_resamples=n_resamples,
             )
 
-    out = {}
-    for metric, samples in diffs.items():
-        arr = np.array(samples)
-        arr = arr[~np.isnan(arr)]
-        ci_lower, ci_upper = float(np.percentile(arr, 2.5)), float(np.percentile(arr, 97.5))
-        out[metric] = {
-            "point_diff": point_diffs[metric], "mean_diff": float(np.mean(arr)),
-            "ci_lower": ci_lower, "ci_upper": ci_upper,
-            "excludes_zero": bool(ci_lower > 0 or ci_upper < 0),
-            "n": len(arr),
-        }
-    return out
+    return {metric: _summarize_diff(point_diffs[metric], samples) for metric, samples in diffs.items()}
+
+
+# --- Post-freeze secondary metrics: time-dependent AUC, Brier, calibration ---
+#
+# Same contract as everything above: the caller produces predictions ONCE
+# from an already-fitted model, and this module only resamples TEST CVEs.
+# `_bootstrap_rows` draws from the same RNG stream as bootstrap_metric /
+# paired_bootstrap_compare (same seed, same unique-CVE order, same
+# rng.choice call), so for a given test_df and seed every metric here is
+# computed on exactly the same 200 resampled CVE sets as the C-index and
+# recall numbers.
+#
+# IPCW (inverse probability of censoring weighting) metrics take the
+# TRAINING survival array for the censoring distribution, per sksurv's
+# design. They are only defined while (a) every test time is within the
+# training follow-up (the censoring KM is undefined past it) and (b) each
+# horizon lies inside the test follow-up. `check_ipcw_horizons` raises
+# HorizonOutOfRangeError instead of clipping, so an out-of-range horizon
+# gets reported, not silently replaced by a different one.
+
+DEFAULT_AUC_HORIZONS = (30, 90, 180)
+
+
+class HorizonOutOfRangeError(ValueError):
+    pass
+
+
+def survival_array(duration, event) -> np.ndarray:
+    from sksurv.util import Surv
+    return Surv.from_arrays(event=np.asarray(event).astype(bool), time=np.asarray(duration, dtype=float))
+
+
+def check_ipcw_horizons(train_duration, test_duration, horizons) -> None:
+    train_max = float(np.max(train_duration))
+    test_min, test_max = float(np.min(test_duration)), float(np.max(test_duration))
+    if test_max > train_max:
+        raise HorizonOutOfRangeError(
+            f"test follow-up (max {test_max}) extends past training follow-up (max {train_max}); "
+            "censoring weights are undefined there"
+        )
+    out_of_range = [h for h in horizons if not (test_min <= h < test_max)]
+    if out_of_range:
+        raise HorizonOutOfRangeError(
+            f"horizons {out_of_range} fall outside test follow-up [{test_min}, {test_max})"
+        )
+
+
+def _bootstrap_rows(
+    cve_ids: np.ndarray, stat_fn, n_stats: int, *, n_resamples: int, seed: int, log_every: int, log_label: str,
+) -> np.ndarray:
+    """(n_resamples, n_stats) array of stat_fn(row_idx) over CVE-level
+    resamples. A resample where stat_fn raises ValueError (e.g. one with no
+    event before a horizon) records NaN; the summaries drop NaNs and report
+    how many resamples survived as n_resamples / n."""
+    rng = np.random.default_rng(seed)
+    unique_cves = np.unique(cve_ids)
+    cve_row_index = _build_cve_row_index(cve_ids)
+
+    samples = np.full((n_resamples, n_stats), np.nan)
+    for i in range(n_resamples):
+        row_idx = _resampled_row_index(cve_row_index, unique_cves, rng)
+        try:
+            samples[i] = stat_fn(row_idx)
+        except ValueError as exc:
+            log_with_fields(logger, logging.WARNING, "bootstrap resample skipped",
+                            label=log_label, resample=i + 1, error=str(exc))
+        if log_every and (i + 1) % log_every == 0:
+            log_with_fields(logger, logging.INFO, "bootstrap progress",
+                            label=log_label, resample=i + 1, n_resamples=n_resamples)
+    return samples
+
+
+def _test_arrays(test_df, cve_id_col, duration_col, event_col):
+    cve_ids = test_df[cve_id_col].values
+    duration = test_df[duration_col].clip(lower=0.5).values.astype(float)
+    event = test_df[event_col].values.astype(bool)
+    return cve_ids, duration, event
+
+
+def time_dependent_auc(survival_train, survival_test, risk_score, horizons) -> np.ndarray:
+    """Cumulative/dynamic AUC at each horizon (sksurv, IPCW-weighted).
+    `risk_score`: higher = higher risk, same convention as the C-index."""
+    from sksurv.metrics import cumulative_dynamic_auc
+    auc, _ = cumulative_dynamic_auc(survival_train, survival_test, risk_score, list(horizons))
+    return np.asarray(auc, dtype=float)
+
+
+def evaluate_time_dependent_auc(
+    test_df: pd.DataFrame,
+    risk_score: np.ndarray,
+    *,
+    survival_train: np.ndarray,
+    label: str,
+    horizons: tuple[int, ...] = DEFAULT_AUC_HORIZONS,
+    cve_id_col: str = "cve_id",
+    duration_col: str = "event_time",
+    event_col: str = "composite_event",
+    n_resamples: int = 200,
+    seed: int = DEFAULT_SEED,
+    log_every: int = 20,
+) -> dict[int, BootstrapResult]:
+    """Time-dependent AUC per horizon with a CVE-clustered bootstrap CI.
+    Raises HorizonOutOfRangeError if any horizon can't be evaluated."""
+    cve_ids, duration, event = _test_arrays(test_df, cve_id_col, duration_col, event_col)
+    check_ipcw_horizons(survival_train["time"], duration, horizons)
+    y_test = survival_array(duration, event)
+
+    point = time_dependent_auc(survival_train, y_test, risk_score, horizons)
+    samples = _bootstrap_rows(
+        cve_ids, lambda idx: time_dependent_auc(survival_train, y_test[idx], risk_score[idx], horizons),
+        len(horizons), n_resamples=n_resamples, seed=seed, log_every=log_every, log_label=f"{label} td-AUC",
+    )
+    return {h: _summarize(point[j], samples[:, j]) for j, h in enumerate(horizons)}
+
+
+def paired_time_dependent_auc_compare(
+    test_df: pd.DataFrame,
+    risk_score_model: np.ndarray,
+    risk_score_baseline: np.ndarray,
+    *,
+    survival_train: np.ndarray,
+    label: str,
+    horizons: tuple[int, ...] = DEFAULT_AUC_HORIZONS,
+    cve_id_col: str = "cve_id",
+    duration_col: str = "event_time",
+    event_col: str = "composite_event",
+    n_resamples: int = 200,
+    seed: int = DEFAULT_SEED,
+    log_every: int = 20,
+) -> dict[int, dict]:
+    """Paired (model - baseline) time-dependent AUC difference per horizon,
+    both computed on the identical resampled rows — same design as
+    paired_bootstrap_compare."""
+    cve_ids, duration, event = _test_arrays(test_df, cve_id_col, duration_col, event_col)
+    check_ipcw_horizons(survival_train["time"], duration, horizons)
+    y_test = survival_array(duration, event)
+
+    def diff(idx):
+        return (time_dependent_auc(survival_train, y_test[idx], risk_score_model[idx], horizons)
+                - time_dependent_auc(survival_train, y_test[idx], risk_score_baseline[idx], horizons))
+
+    point = diff(np.arange(len(test_df)))
+    samples = _bootstrap_rows(cve_ids, diff, len(horizons), n_resamples=n_resamples, seed=seed,
+                              log_every=log_every, log_label=f"{label} paired td-AUC")
+    return {h: _summarize_diff(point[j], samples[:, j]) for j, h in enumerate(horizons)}
+
+
+def evaluate_brier(
+    test_df: pd.DataFrame,
+    surv_prob: np.ndarray,
+    times: np.ndarray,
+    *,
+    survival_train: np.ndarray,
+    reference_surv_prob: np.ndarray,
+    label: str,
+    point_horizons: tuple[int, ...] = DEFAULT_AUC_HORIZONS,
+    cve_id_col: str = "cve_id",
+    duration_col: str = "event_time",
+    event_col: str = "composite_event",
+    n_resamples: int = 200,
+    seed: int = DEFAULT_SEED,
+    log_every: int = 20,
+) -> dict[str, BootstrapResult]:
+    """IPCW Brier score at `point_horizons` and integrated over
+    [times[0], times[-1]], for a model's predicted survival
+    `surv_prob` (n_rows x len(times), S(t|x) on the `times` grid, which
+    must contain every point horizon).
+
+    With a rare event (well under 1% of rows), any Brier score is close to
+    zero no matter how good the model is, so the raw number is
+    uninformative alone. Every Brier value is therefore paired with the
+    same score for `reference_surv_prob` (len(times),) — a covariate-free
+    prediction, e.g. the training Kaplan-Meier curve given to every row —
+    and the index of prediction accuracy IPA = 1 - BS_model / BS_reference,
+    computed per resample. IPA > 0 means the model beats knowing only the
+    base rate; 0 means no better; negative means worse.
+
+    Integrated Brier = trapezoid over the grid / (times[-1] - times[0]),
+    identical to sksurv.metrics.integrated_brier_score (it's the same
+    formula on the same brier_score output; computed directly here so one
+    brier_score call per resample serves both the point and integrated
+    values)."""
+    from sksurv.metrics import brier_score
+
+    times = np.asarray(times, dtype=float)
+    horizon_pos = [int(np.flatnonzero(times == h)[0]) for h in point_horizons]
+    cve_ids, duration, event = _test_arrays(test_df, cve_id_col, duration_col, event_col)
+    check_ipcw_horizons(survival_train["time"], duration, (times[0], times[-1]))
+    y_test = survival_array(duration, event)
+    reference_surv_prob = np.asarray(reference_surv_prob, dtype=float)
+
+    names = ["ibs", "ibs_reference", "ipa_ibs"]
+    for h in point_horizons:
+        names += [f"brier_{h}d", f"brier_{h}d_reference", f"ipa_{h}d"]
+
+    def stats(idx):
+        bs = brier_score(survival_train, y_test[idx], surv_prob[idx], times)[1]
+        ref = np.broadcast_to(reference_surv_prob, (len(idx), len(times)))
+        bs_ref = brier_score(survival_train, y_test[idx], ref, times)[1]
+        width = times[-1] - times[0]
+        ibs, ibs_ref = np.trapezoid(bs, times) / width, np.trapezoid(bs_ref, times) / width
+        out = [ibs, ibs_ref, 1 - ibs / ibs_ref]
+        for p in horizon_pos:
+            out += [bs[p], bs_ref[p], 1 - bs[p] / bs_ref[p]]
+        return np.array(out)
+
+    point = stats(np.arange(len(test_df)))
+    samples = _bootstrap_rows(cve_ids, stats, len(names), n_resamples=n_resamples, seed=seed,
+                              log_every=log_every, log_label=f"{label} Brier")
+    return {name: _summarize(point[j], samples[:, j]) for j, name in enumerate(names)}
+
+
+def km_event_probability(duration: np.ndarray, event: np.ndarray, horizon: float) -> float:
+    """1 - S_KM(horizon): Kaplan-Meier-estimated probability of the event by
+    `horizon`, accounting for censoring (a raw event fraction would
+    understate it, since rows censored before the horizon count as
+    non-events)."""
+    from sksurv.nonparametric import kaplan_meier_estimator
+    km_times, km_surv = kaplan_meier_estimator(np.asarray(event).astype(bool), np.asarray(duration, dtype=float))
+    pos = np.searchsorted(km_times, horizon, side="right") - 1
+    return float(1.0 - km_surv[pos]) if pos >= 0 else 0.0
+
+
+def km_calibration_table(
+    test_df: pd.DataFrame,
+    predicted_event_prob: np.ndarray,
+    horizon: float,
+    *,
+    label: str,
+    n_bins: int = 10,
+    cve_id_col: str = "cve_id",
+    duration_col: str = "event_time",
+    event_col: str = "composite_event",
+    n_resamples: int = 200,
+    seed: int = DEFAULT_SEED,
+    log_every: int = 20,
+) -> pd.DataFrame:
+    """Calibration of predicted P(event by `horizon`) against the
+    Kaplan-Meier observed rate, in `n_bins` equal-count bins of the
+    prediction (bin 1 = lowest). Bins are assigned ONCE on the full test
+    set and rows keep their bin through resampling; the observed-rate CI is
+    the same CVE-clustered bootstrap as every other metric here (a per-bin
+    Greenwood CI would treat a CVE's landmark rows as independent). The
+    last row, bin "all", is calibration-in-the-large over every row.
+    `ratio` = mean_predicted / observed (>1: over-predicts risk)."""
+    cve_ids, duration, event = _test_arrays(test_df, cve_id_col, duration_col, event_col)
+    p = np.asarray(predicted_event_prob, dtype=float)
+    bins = pd.qcut(pd.Series(p).rank(method="first"), n_bins, labels=False).to_numpy()
+
+    def observed(idx):
+        d, e, b = duration[idx], event[idx], bins[idx]
+        per_bin = [km_event_probability(d[b == k], e[b == k], horizon) for k in range(n_bins)]
+        return np.array(per_bin + [km_event_probability(d, e, horizon)])
+
+    point = observed(np.arange(len(p)))
+    samples = _bootstrap_rows(cve_ids, observed, n_bins + 1, n_resamples=n_resamples, seed=seed,
+                              log_every=log_every, log_label=f"{label} calibration")
+
+    rows = []
+    for k in range(n_bins + 1):
+        mask = bins == k if k < n_bins else np.ones(len(p), dtype=bool)
+        obs = _summarize(point[k], samples[:, k])
+        mean_pred = float(p[mask].mean())
+        rows.append({
+            "bin": str(k + 1) if k < n_bins else "all",
+            "n_rows": int(mask.sum()),
+            "n_events_by_horizon": int((event[mask] & (duration[mask] <= horizon)).sum()),
+            "pred_min": float(p[mask].min()), "pred_max": float(p[mask].max()),
+            "mean_predicted": mean_pred,
+            "observed": obs.point_estimate, "observed_ci_lower": obs.ci_lower, "observed_ci_upper": obs.ci_upper,
+            "ratio": mean_pred / obs.point_estimate if obs.point_estimate > 0 else float("inf"),
+        })
+    return pd.DataFrame(rows)

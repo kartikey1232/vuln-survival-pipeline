@@ -222,3 +222,26 @@ the current table exactly. Cox's stability is real, not a stale-file
 artifact — consistent with Cox being linear and unable to exploit
 "CVSS present vs absent" as a strong categorical split the way RSF/
 XGBoost's tree structures can.
+
+## Addendum: post-freeze secondary metrics (2026-09-24)
+
+`scripts/evaluate/post_freeze_metrics.py` computes time-dependent AUC
+(30/90/180d), plus Brier score, IPA and 90-day calibration for Cox. It
+runs on the FROZEN models; nothing is refit. The new metric functions live
+in `scripts/evaluate/common.py` and use the same seed and CVE resamples as
+C-index and recall. Full results are in `docs/model_comparison.md`'s
+"Post-freeze secondary metrics" section.
+
+- Time-dependent AUC agrees with the C-index ranking (Cox ≈0.85 at every
+  horizon, significantly above EPSS raw ≈0.735).
+- XGBoost-AFT's paired C-index gain over EPSS does NOT exclude zero
+  (+0.035, CI −0.027..+0.099). The outstanding item is resolved.
+- **New open item: frozen Cox probabilities are badly under-dispersed.**
+  - Predicted P(KEV ≤90d) spans only 0.078–0.184% across all test rows,
+    and IPA vs the base rate is ≈0.0003.
+  - The top decile is under-predicted about 6×, and the bottom deciles
+    are over-predicted.
+  - Calibration-in-the-large is fine (ratio 0.92).
+  - The fuzzy layer must not consume these raw probabilities without
+    recalibration (on fit/val only) or a switch to rank-based inputs. That
+    decision is still open.

@@ -148,6 +148,183 @@ Limitations). Any RSF number in this document should be read as "≈0.81 ±
 
 ![Recall at alert budget](figures/recall_at_budget.png)
 
+## Post-freeze secondary metrics: time-dependent AUC, Brier score, calibration
+
+**These were computed after the models were frozen (commit f0a07b2) and did
+not influence model selection, tuning, or features.** They use the frozen
+files in `models/` as-is. Before reporting, the script checks that each
+loaded model reproduces the test C-index in its metadata to 1e-9.
+Everything runs through `scripts/evaluate/common.py`, with the same test
+rows, seed (20260922) and 200 whole-CVE bootstrap resamples as every table
+above. Script: `python -m scripts.evaluate.post_freeze_metrics`.
+
+**EPSS reference:** this section uses the **raw** EPSS score
+(`epss_score_at_asof_raw`, as `docs/evaluation_plan.md` specifies). The
+tables above use `epss_pct_now`. On test the two give nearly the same
+C-index (0.748 raw vs 0.750 percentile).
+
+### Time-dependent AUC (cumulative/dynamic, sksurv)
+
+- **Horizons:** 30, 90 and 180 days after each row's `as_of_date`.
+- **Censoring weights:** estimated from the training survival data.
+- **Range check:** all horizons are in range. Test follow-up is 1–620
+  days, and the longest test time (620) is within the training follow-up
+  (1–1089 days). No resample was dropped.
+
+Pooled, 95% CI:
+
+| Model | AUC(30d) | AUC(90d) | AUC(180d) |
+|---|---|---|---|
+| EPSS raw | 0.736 (0.668–0.808) | 0.736 (0.663–0.802) | 0.734 (0.670–0.798) |
+| **Cox** | **0.847 (0.786–0.897)** | **0.846 (0.799–0.888)** | **0.850 (0.805–0.889)** |
+| RSF | 0.825 (0.749–0.872) | 0.817 (0.755–0.864) | 0.820 (0.765–0.865) |
+| XGBoost-AFT | 0.752 (0.683–0.812) | 0.776 (0.710–0.831) | 0.788 (0.731–0.830) |
+
+Paired difference vs EPSS raw on the same resamples (✓ = 95% CI excludes 0):
+
+| Model | ΔAUC(30d) | ΔAUC(90d) | ΔAUC(180d) |
+|---|---|---|---|
+| Cox | +0.111 (0.065, 0.165) ✓ | +0.110 (0.070, 0.155) ✓ | +0.115 (0.080, 0.160) ✓ |
+| RSF | +0.089 (0.010, 0.166) ✓ | +0.082 (0.017, 0.155) ✓ | +0.086 (0.032, 0.150) ✓ |
+| XGBoost-AFT | +0.016 (−0.059, 0.098) | +0.041 (−0.039, 0.121) | +0.054 (−0.013, 0.122) |
+
+Per landmark (point estimate; 95% CI in brackets for the paired Δ vs EPSS):
+
+| Landmark | Horizon | EPSS raw | Cox (Δ) | RSF (Δ) | XGBoost-AFT (Δ) |
+|---|---|---|---|---|---|
+| 7 | 30d | 0.787 | 0.879 (+0.092 [0.049, 0.144] ✓) | 0.824 (+0.037 [−0.043, 0.114]) | 0.758 (−0.029 [−0.134, 0.091]) |
+| 7 | 90d | 0.766 | 0.865 (+0.099 [0.063, 0.139] ✓) | 0.817 (+0.051 [−0.019, 0.133]) | 0.749 (−0.018 [−0.122, 0.088]) |
+| 7 | 180d | 0.749 | 0.859 (+0.110 [0.076, 0.146] ✓) | 0.819 (+0.070 [0.008, 0.136] ✓) | 0.771 (+0.022 [−0.060, 0.118]) |
+| 14 | 30d | 0.770 | 0.865 (+0.095 [0.040, 0.159] ✓) | 0.840 (+0.071 [−0.040, 0.168]) | 0.774 (+0.004 [−0.160, 0.134]) |
+| 14 | 90d | 0.748 | 0.853 (+0.105 [0.060, 0.155] ✓) | 0.827 (+0.079 [−0.002, 0.148]) | 0.788 (+0.041 [−0.056, 0.149]) |
+| 14 | 180d | 0.748 | 0.853 (+0.105 [0.064, 0.150] ✓) | 0.820 (+0.072 [0.000, 0.147] ✓) | 0.795 (+0.047 [−0.044, 0.145]) |
+| 30 | 30d | 0.615 | 0.777 (+0.162 [0.085, 0.247] ✓) | 0.809 (+0.194 [0.058, 0.337] ✓) | 0.821 (+0.206 [0.078, 0.322] ✓) |
+| 30 | 90d | 0.673 | 0.809 (+0.136 [0.075, 0.196] ✓) | 0.803 (+0.130 [0.032, 0.232] ✓) | 0.833 (+0.161 [0.073, 0.243] ✓) |
+| 30 | 180d | 0.695 | 0.832 (+0.137 [0.087, 0.196] ✓) | 0.818 (+0.123 [0.043, 0.213] ✓) | 0.853 (+0.158 [0.082, 0.231] ✓) |
+
+What the AUC results show:
+
+- **The AUC ranking matches the C-index ranking:** Cox > RSF > XGBoost-AFT >
+  EPSS.
+- **Cox beats EPSS significantly** at every horizon, pooled and at every
+  landmark.
+- **XGBoost-AFT beats EPSS significantly only at landmark 30.** That is
+  where EPSS is weakest (AUC(30d) 0.615), and it matches XGBoost-AFT's
+  per-landmark C-index pattern above.
+- **Sanity check passed:** no model's AUC is well above its C-index (Cox
+  0.846–0.850 vs C 0.849; RSF 0.817–0.825 vs 0.812; XGBoost-AFT 0.752–0.788
+  vs 0.785).
+- **Censoring-weight sensitivity:** re-estimating the censoring weights
+  from test instead of train moves every pooled AUC by at most 0.002 (Cox
+  0.847/0.846/0.849), and Cox's IBS from 0.00104 to 0.00098. The IPCW
+  weighting is not driving these numbers.
+
+### Brier score (Cox only)
+
+**Method:**
+
+- IPCW Brier score at 30, 90 and 180 days, and the integrated Brier score
+  (IBS) over 30–180 days on a daily grid.
+- The Brier score is near zero for every model here, because the event is
+  rare: about 0.1% of rows by 90 days. So each Brier value is paired with
+  a **reference**: the training Kaplan-Meier curve, i.e. the same base-rate
+  prediction for every row.
+- The comparison uses the index of prediction accuracy,
+  IPA = 1 − BS_Cox / BS_reference, computed on each resample. IPA > 0 means
+  the model beats knowing only the base rate.
+
+| | Cox | Reference (train KM) | IPA (95% CI) |
+|---|---|---|---|
+| Brier 30d | 0.000558 | 0.000558 | 0.00015 (0.00011–0.00020) |
+| Brier 90d | 0.001037 | 0.001038 | 0.00031 (0.00025–0.00039) |
+| Brier 180d | 0.001325 | 0.001326 | 0.00049 (0.00039–0.00059) |
+| IBS 30–180d | 0.001036 (0.000835–0.001268) | 0.001037 | 0.00035 (0.00027–0.00042) |
+
+**Cox's Brier score is essentially the base rate's.** The IPA is
+significantly above zero but tiny, about 0.03%. The near-zero Brier value
+comes from event rarity, not from good predictions. The calibration results
+below explain why.
+
+**No EPSS Brier score.** The raw EPSS score is a probability of observed
+exploitation activity in the next 30 days. It is not a probability of KEV
+listing, and it says nothing about 90 or 180 days. Any mapping to
+P(KEV by t) would be a new fitted model, not EPSS, so this section doesn't
+invent one.
+
+### Calibration at 90 days (Cox)
+
+**Method:** test rows are split into deciles of predicted
+P(KEV within 90 days) = 1 − S(90|x). In each decile, the mean prediction is
+compared with the Kaplan-Meier observed rate. Observed-rate CIs come from
+the same CVE-clustered bootstrap.
+
+![Cox calibration at 90 days](figures/calibration_90d.png)
+
+| Decile | Predicted range | Mean predicted | Observed (95% CI) | Events ≤90d | Predicted / observed |
+|---|---|---|---|---|---|
+| 1 | 0.078–0.084% | 0.083% | 0.006% (0–0.017%) | 1 | 14.8 |
+| 2 | 0.084–0.086% | 0.085% | 0.011% (0–0.034%) | 2 | 7.6 |
+| 3 | 0.086–0.088% | 0.087% | 0.022% (0–0.062%) | 4 | 3.9 |
+| 4 | 0.088–0.089% | 0.088% | 0.006% (0–0.017%) | 1 | 15.7 |
+| 5 | 0.089–0.090% | 0.089% | 0.011% (0–0.034%) | 2 | 8.0 |
+| 6 | 0.090–0.091% | 0.090% | 0.078% (0.022–0.146%) | 14 | 1.2 |
+| 7 | 0.091–0.093% | 0.092% | 0.050% (0.011–0.101%) | 9 | 1.8 |
+| 8 | 0.093–0.096% | 0.094% | 0.134% (0.055–0.221%) | 24 | 0.7 |
+| 9 | 0.096–0.101% | 0.098% | 0.050% (0.017–0.096%) | 9 | 1.9 |
+| 10 | 0.101–0.184% | 0.109% | 0.621% (0.455–0.801%) | 111 | 0.18 |
+| All | — | 0.092% | 0.099% (0.078–0.121%) | 177 | 0.92 |
+
+**Verdict: calibrated on average, but badly under-dispersed.** Cox's
+probabilities are too compressed toward the base rate, i.e.
+*under-confident* at both ends:
+
+- **Overall level is right.** Mean predicted 0.092% vs observed 0.099%
+  (ratio 0.92, inside the observed CI).
+- **The predictions barely vary.** Across all 178,756 test rows the
+  predicted 90-day probability spans only 0.078%–0.184%. The partial
+  hazards span a 2.4× range, from lowest to highest.
+- **High-risk rows are under-predicted.** The top decile holds 111 of
+  the 177 events by 90 days. It is predicted at 0.11% but observed at 0.62%,
+  about 6× too low.
+- **Low-risk rows are over-predicted.** Deciles 1–5 are predicted at about
+  0.085% and observed at 0.006–0.022%.
+
+The ranking is still good (C-index 0.849, AUC 0.85), because a Cox model's
+ranking depends only on the order of its linear predictor, not its spread.
+The penalizer (0.1) was chosen on C-index, which is scale-free, so nothing
+in model selection would have noticed the compression.
+
+**Consequence for the planned fuzzy layer:** it will inherit these
+compressed probabilities if it consumes 1 − S(t|x) from the frozen Cox
+directly. A fuzzy rule on a probability that ranges from 0.08% to 0.18%
+cannot separate "watch" from "act" on the probability's own scale. One of
+these would be needed first:
+
+- recalibrate on fit/val only, never on test (e.g. isotonic or Platt-style
+  on validation);
+- feed the fuzzy layer rank or percentile of risk instead of raw
+  probability;
+- revisit the penalizer against a probability-scale criterion (Brier/IPA
+  on validation).
+
+That decision is outside this reporting-only step, and nothing here changes
+the frozen model.
+
+### XGBoost-AFT C-index vs EPSS (outstanding item, resolved)
+
+**Confirmed: the interval does not exclude zero.** Re-running
+`paired_bootstrap_compare` on the frozen XGBoost-AFT reproduces the table
+above exactly:
+
+- **vs `epss_pct_now`:** point Δ = +0.035 (bootstrap mean +0.037), 95% CI
+  (−0.027, +0.099). The "+0.037" in the paired table above is the bootstrap
+  mean.
+- **vs raw EPSS:** Δ = +0.037, 95% CI (−0.019, +0.099).
+
+XGBoost-AFT's C-index gain over EPSS is **not statistically
+distinguishable from zero** at the 95% level. The same holds for its pooled
+time-dependent AUC gain at every horizon.
+
 ## Limitations
 
 - **CVSS/CWE source fix, applied this session**: the original "CNA-sourced"
