@@ -265,7 +265,8 @@ excludes 0):
 - **Against Cox alone, fuzzy is worse.** Recall@10% is 7.1pp lower and
   the CI excludes zero. Every other difference is negative or flat. The
   blind-spot catch rate falls from 0.31 to 0.20 (CI upper bound +0.0004,
-  so only just not significant). Adding EPSS and CVSS through rules made
+  so only just not significant). *Corrected encoding: 0.34 vs 0.21,
+  −0.131 [−0.229, −0.024], which now excludes zero.* Adding EPSS and CVSS through rules made
   the Cox ranking worse at the budgets that matter. This is consistent
   with rules R10, R12 and R13, which lift rows that EPSS already rates
   highly, displacing exactly the rows EPSS misses. It is consistent with

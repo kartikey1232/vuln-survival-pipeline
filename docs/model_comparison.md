@@ -74,31 +74,31 @@ Paired (a) − (b), same resamples: ΔC-index = −0.029 (95% CI −0.073, 0.007
 does not exclude zero), **ΔRecall@10% = −0.059 (95% CI −0.112, −0.007 —
 excludes zero)**.
 
-**This is a real, counterintuitive finding, not noise**: for this specific
-XGBoost-AFT configuration (max_depth=6, fairly deep), the EPSS trajectory
-features (7-day-ago percentile, delta, first-observed, running max,
-days-to-first-observation) make recall@10% measurably *worse*, and dropping
-EPSS entirely does even better than keeping only `epss_pct_now`. The most
-likely explanation is overfitting: six correlated, somewhat noisy trajectory
-features give a depth-6 tree model many ways to find spurious splits, while
-`cna_kev_rate_expanding` and CVSS carry most of the real signal (matching
-RSF's permutation importances, where `cna_kev_rate_expanding` and
-`cvss_base_score` rank far above any EPSS feature). This does not mean EPSS
-trajectory is worthless — Cox (linear, less prone to this failure mode)
-still benefits from the full feature set — but it's a concrete reason not to
-treat XGBoost-AFT's current tuning as final.
+> **Original encoding; never re-run with the corrected encoding.** This
+> ablation's status under the corrected encoding is unknown. XGBoost-AFT's
+> configuration was also tuned on mis-encoded validation inputs
+> ([`results_corrected_encoding.md`](results_corrected_encoding.md)). It is
+> not cited as evidence about trajectory features. H1's evidence is the
+> corrected Cox ablation below.
+
+Under the original encoding, for this XGBoost-AFT configuration, the
+(a) − (b) recall@10% interval excluded zero. One possible explanation is
+that six correlated trajectory features give a depth-6 tree spurious split
+candidates. RSF's permutation importances rank `cna_kev_rate_expanding`
+and `cvss_base_score` far above any EPSS feature. No ablation tested that
+explanation, and it is not a finding.
 
 ## Cox trajectory ablation (reporting only, same feature sets as above)
 
-> **Original encoding; the significance claim below does not hold under
-> the corrected encoding.** Re-run with corrected encoding (same feature
-> sets, penalizer, seed; see
+> **The table below is original encoding. The corrected result is a null
+> result: trajectory features show no measurable benefit.** Re-run with
+> the corrected encoding (same feature sets, penalizer and seed; see
 > [`results_corrected_encoding.md`](results_corrected_encoding.md#cox-trajectory-ablation-corrected)),
-> (a) − (b) ΔC-index is −0.0055 (95% CI −0.0147, +0.0049). The direction
-> is the same, but the interval now includes zero. So "dropping trajectory
-> features significantly improves Cox", and the inference drawn from it
-> below, is no longer supported. What remains supported is: no evidence
-> that trajectory features help Cox.
+> (a) − (b) ΔC-index is −0.0055, 95% CI [−0.0147, +0.0049], which spans
+> zero. Full Cox leads at recall@10% (0.631 vs 0.616). Full Cox also beats
+> Cox-without-any-EPSS at recall@10% (+0.075, CI excludes zero): EPSS's
+> current level carries signal, and its trajectory adds nothing measurable
+> on top. This is the evidence for rejecting H1 (`docs/STATUS.md`).
 
 | Feature set | C-index | Recall@5% | Recall@10% |
 |---|---|---|---|
@@ -111,20 +111,12 @@ Paired (a) − (b), same 200 resamples: **ΔC-index = −0.0107 (95% CI −0.019
 no), ΔRecall@10% = +0.0261 (95% CI −0.0217, 0.0755 — no).
 Paired (a) − (c): ΔC-index = +0.0114 (95% CI −0.0190, 0.0395 — no).
 
-**The trajectory-feature finding from the XGBoost ablation is not
-XGBoost-specific.** Dropping the same 6 EPSS-trajectory features
-(`epss_pct_7d_ago`, `epss_pct_7d_ago_missing`, `epss_pct_delta_7d`,
-`epss_pct_first`, `epss_pct_max_to_date`, `days_to_first_epss`) measurably
-*improves* Cox's C-index too, with a CI that excludes zero — this is a
-significant result for a linear model, which rules out "depth-6 tree
-overfitting to noisy correlated features" as the sole explanation (Cox has
-no depth or splits to overfit with). The more likely shared explanation:
-these 6 features are highly collinear with each other and with
-`epss_pct_now`, and collinearity alone degrades a penalized linear fit
-(inflated coefficient variance) independent of any tree-specific
-mechanism. Recall-based metrics do not show a significant effect for Cox
-in either direction, so this is primarily a ranking-precision effect
-(C-index), not a top-of-list effect (recall@budget) for this model.
+The 6 trajectory features dropped in (b) are `epss_pct_7d_ago`, `epss_pct_7d_ago_missing`, `epss_pct_delta_7d`, `epss_pct_first`, `epss_pct_max_to_date`, `days_to_first_epss`.
+Under the original encoding the (a) − (b) C-index interval above excluded
+zero. That was an artifact of the test-encoding bug: under the corrected
+encoding it spans zero. The original reading of this table, and the
+explanation built on it, have been withdrawn. The supported statement is
+the null result in the note above.
 
 ## Blind-spot catch rate at 10% budget
 

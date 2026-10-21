@@ -217,7 +217,7 @@ The frozen design is unchanged; only test `cox_risk_pct` is corrected.
 
 | Ranking | C-index | Recall@1% | Recall@5% | Recall@10% | Blind-spot @10% |
 |---|---|---|---|---|---|
-| Fuzzy | 0.842 (0.802–0.876) | 0.213 | 0.448 | 0.534 | 0.207 |
+| Fuzzy | 0.841 (0.802–0.876) | 0.213 | 0.448 | 0.534 | 0.207 |
 | Cox | 0.850 (0.810–0.887) | 0.231 | 0.496 | 0.631 | 0.338 |
 | EPSS | 0.750 | 0.190 | 0.369 | 0.459 | 0 |
 | Linear blend | 0.836 (0.787–0.870) | 0.201 | 0.470 | 0.582 | 0.317 |
@@ -269,23 +269,20 @@ Paired differences, original → **corrected** (95% CI; bold = excludes 0):
 | (a) − (b) | **−0.0107 (−0.0196, −0.0012)** → −0.0055 (−0.0147, +0.0049) | −0.011 → −0.019 (−0.071, +0.029) | −0.030 → −0.015 (−0.084, +0.035) | +0.026 → +0.015 (−0.027, +0.054) |
 | (a) − (c) | +0.0114 (−0.019, +0.040) → +0.0172 (−0.0103, +0.0441) | +0.011 → +0.022 (−0.060, +0.096) | +0.067 → +0.071 (−0.025, +0.162) | +0.052 (−0.024, +0.117) → **+0.075 (+0.008, +0.139)** |
 
-**Does the conclusion hold? Partly.**
+**Reading: trajectory features show no measurable benefit (a null
+result).** This is the evidence for rejecting H1 (`docs/STATUS.md`).
 
-- **Direction: unchanged.** Removing the trajectory features still raises
-  Cox's C-index (point difference −0.0055). Full Cox is not better than
-  Cox without trajectory features on any metric with an interval excluding
-  zero. **There is still no evidence that EPSS trajectory features improve
-  Cox.**
-- **Significance: lost.** The interval for (a) − (b) now includes zero. The
-  original, stronger claim (that dropping trajectory features
-  *significantly improves* Cox's C-index, which `model_comparison.md` used
-  to rule out tree overfitting as the sole explanation) **does not hold
-  under corrected encoding**. The supported statement is now: no
-  significant difference; point estimate favours dropping them.
-- **New:** full Cox beats Cox-without-any-EPSS at recall@10% (+0.075,
-  interval excludes zero). EPSS level features (`epss_pct_now`, the model
-  version) carry signal at the top of the list, even though the trajectory
-  features don't add any.
+- **(a) − (b):** ΔC-index −0.0055, CI [−0.0147, +0.0049]. The interval
+  spans zero, and no other metric's interval excludes zero either. The
+  point estimates split by metric: C-index is 0.8501 full vs 0.8556
+  trimmed, while full Cox leads at recall@10% (0.631 vs 0.616). Neither is
+  significant, and the trimmed model is not superior.
+- **Status change:** under the original encoding the (a) − (b) C-index
+  interval excluded zero. It no longer does. That original reading, and the
+  explanation `model_comparison.md` built on it, are withdrawn.
+- **Companion finding:** full Cox beats Cox-without-any-EPSS at
+  recall@10% (+0.075, CI excludes zero). EPSS's current level carries real
+  signal, and its trajectory adds nothing measurable on top.
 
 ### Not re-run
 
@@ -325,6 +322,6 @@ Neither conclusion flipped.
   validation), so it is unaffected.
 - The fuzzy layer's design is unaffected: its validation `cox_risk_pct`
   came from encoding the full training frame, which was correct.
-- The Cox trajectory ablation was re-run; dropping trajectory features
-  no longer improves C-index *significantly* (see above). The XGBoost-AFT
+- The Cox trajectory ablation was re-run. Trajectory features show no
+  measurable benefit (null result, CI spans zero; see above). The XGBoost-AFT
   ablation and the RSF variance study were not re-run.

@@ -5,6 +5,28 @@ analysis. This document exists so a new session (or a compacted-context
 continuation of this one) can pick up work without re-deriving everything
 below from scratch. Update it whenever a design decision changes.
 
+## Hypotheses (exact wording)
+
+**H1** (as recorded in the progress report): *"adding EPSS trajectory
+features improves discrimination over a model using only the current
+EPSS value."*
+
+**Status: rejected — no evidence that trajectory features help.**
+
+- Cox ablation, corrected encoding: (a) full Cox minus (b) Cox without the
+  6 trajectory features gives ΔC-index −0.0055, paired 95% CI [−0.0147,
+  +0.0049]. The interval spans zero.
+- So the trajectory features show **no measurable benefit** (a null
+  result), and that is the whole claim.
+- Companion finding: full Cox beats Cox-without-any-EPSS at recall@10%
+  (+0.075, CI excludes zero). So EPSS's current level carries real signal,
+  and its trajectory adds nothing measurable on top.
+- Numbers: `docs/final_results.md`.
+
+The rejection does NOT rest on the original-encoding result (an interval
+excluding zero in the other direction). That result was an artifact of the
+test-encoding bug and is not cited as evidence.
+
 ## Pipeline state, end to end
 
 1. **Ingestion** (`scripts/download/`): NVD (full backfill 2021-11-01 →
@@ -171,10 +193,12 @@ explanation offered is "few training events (~440) favor a penalized
 linear model over flexible learners," not "Cox can't exploit artifacts,"
 unless a specific ablation supports the latter.
 
-Trajectory ablation (XGBoost, current tuning) found dropping EPSS
-trajectory features IMPROVES recall@10% (paired CI excludes zero) — this
-config is likely overfitting on noisy trajectory features. Not yet
-checked for Cox (open item below).
+Trajectory ablation (XGBoost-AFT, current tuning; original encoding, never
+re-run with the corrected encoding): under the original encoding the
+(a) − (b) recall@10% interval excluded zero. Its status under the
+corrected encoding is unknown. The config was also tuned on mis-encoded
+validation inputs, so this is not cited as evidence about trajectory
+features. H1's evidence is the corrected Cox ablation (see Hypotheses).
 
 ## Known limitations / open items at handoff
 
@@ -182,6 +206,8 @@ checked for Cox (open item below).
   NOT yet been independently verified to have used post-fix data — this
   is the next task in progress.
 - Cox trajectory ablation not yet run (XGBoost's was; see above).
+  *[Resolved: run in 0456e46 and re-run with the corrected encoding in
+  f260542; see Hypotheses.]*
 - Blind-spot catch rate side-by-side table for all 3 models not yet
   written up in one place (numbers exist in
   `scratch/final_comparison_results.json`).
@@ -335,13 +361,17 @@ Corrected headline:
   medians are 0.32–0.38, not 0.25–0.33.
 - **Cox trajectory ablation re-run** (refits reduced-feature Cox models
   only; same feature sets, penalizer and seed):
-  - Removing trajectory features still raises C-index (0.8556 vs 0.8501),
-    but the paired interval now includes zero (−0.0055, CI −0.0147,
-    +0.0049; was −0.0107 excluding zero).
-  - Supported: no evidence trajectory features help Cox. No longer
-    supported: that removing them significantly helps.
-  - New: full Cox beats Cox-without-any-EPSS at recall@10% (+0.075, CI
-    excludes zero).
+  - Trajectory features show **no measurable benefit** (a null result):
+    (a) − (b) ΔC-index −0.0055, CI [−0.0147, +0.0049], which spans zero.
+    Under the original encoding the interval excluded zero; that result
+    is not cited.
+  - The point estimates split by metric. C-index is 0.8501 full vs 0.8556
+    trimmed. Recall@10% is 0.631 full vs 0.616 trimmed, so full Cox leads.
+    Neither difference is significant, and the trimmed model is not
+    superior.
+  - Companion finding: full Cox beats Cox-without-any-EPSS at recall@10%
+    (+0.075, CI excludes zero). EPSS's current level carries real signal;
+    its trajectory adds nothing measurable on top.
 - The XGBoost-AFT ablation and RSF variance were not re-run.
 
 **Limitations:**

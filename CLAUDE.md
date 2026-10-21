@@ -80,7 +80,9 @@ to follow; STATUS.md is the longer narrative.
   Cox, explains by fuzzy rules; see `api/README.md`)
 - `scripts/fuzzy/` — Cox risk percentiles + the fuzzy explanation layer
 - `docs/STATUS.md` — full narrative status, read this first
-- `docs/model_comparison.md` — final model numbers
+- `docs/final_results.md` — every corrected number for the report/deck in one
+  place (start here for numbers)
+- `docs/model_comparison.md` — original-encoding model numbers (marked)
 - `docs/enrichment_leakage.md` — the leakage investigation writeup
 - `database/schema.sql` + `database/models.py` — must always match each
   other (schema.sql is authoritative for a fresh `vsp db init`; models.py
