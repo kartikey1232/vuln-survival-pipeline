@@ -59,6 +59,11 @@ def cve_record(engine: Engine, cve_id: str) -> dict | None:
         if row is None:
             return None
         out = dict(row)
+        # The CNA that owns the CVE: the same field the feature build's
+        # own-CNA source rule uses (build_landmark_dataset._load_base_cve_table).
+        out["cna_source_identifier"] = conn.execute(text(
+            "SELECT payload->>'sourceIdentifier' FROM staging.nvd_cve_raw WHERE cve_id = :cve_id "
+            "ORDER BY last_modified_src DESC LIMIT 1"), {"cve_id": cve_id}).scalar()
         out["cvss_metrics"] = [dict(r) for r in conn.execute(text(
             "SELECT cvss_version, base_score, base_severity, vector_string, source, is_primary "
             "FROM canonical.cvss_metric WHERE cve_id = :cve_id ORDER BY cvss_version, source"),

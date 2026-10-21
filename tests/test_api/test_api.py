@@ -79,6 +79,9 @@ def client():
                      [{c: r[c] for c in cols} for r in rows])
         conn.execute(text("INSERT INTO canonical.kev (cve_id, date_added, vendor_project, first_seen_in_catalog_at) "
                           "VALUES (:c, :d, 'Acme', :now)"), {"c": KEV_CVE, "d": kev_published + timedelta(days=20), "now": NOW})
+        conn.execute(text("INSERT INTO staging.nvd_cve_raw (cve_id, fetched_at, last_modified_src, payload) "
+                          "VALUES (:c, :now, :now, CAST(:p AS jsonb))"),
+                     {"c": KEV_CVE, "now": NOW, "p": '{"id": "%s", "sourceIdentifier": "cna@acme"}' % KEV_CVE})
         conn.execute(text("INSERT INTO canonical.cvss_metric (cve_id, cvss_version, vector_string, base_score, source) "
                           "VALUES (:c, '3.1', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H', 9.8, 'cna@acme')"),
                      {"c": KEV_CVE})
@@ -119,6 +122,8 @@ def test_cve_scores_each_landmark_and_explains_missing_ones(client):
     assert body["kev"]["date_added"] == "2025-06-21"
     assert [p["snapshot_date"] for p in body["epss_history"]] == sorted(p["snapshot_date"] for p in body["epss_history"])
     assert len(body["epss_history"]) == 10 and body["cvss_metrics"][0]["base_score"] == 9.8
+    assert body["cna_source_identifier"] == "cna@acme"
+    assert client.get("/cve/CVE-2025-20000").json()["cna_source_identifier"] is None
 
     for lm in body["landmarks"]:
         assert lm["split"] == "test"
@@ -182,3 +187,16 @@ def test_requests_never_refit_the_model(client):
     for path in ("/model", f"/cve/{KEV_CVE}", "/watchlist?budget=0.5"):
         assert client.get(path).status_code == 200
     assert get_artifacts().cox.params_.equals(frozen)
+
+
+def test_backtest_serves_the_corrected_record(client):
+    import json
+    body = client.get("/backtest").json()
+    with open(MODELS / "cox_final_metadata.json") as f:
+        corrected = json.load(f)["test_metrics_corrected_encoding"]
+    assert body["models"]["Cox"]["cindex"]["point"] == pytest.approx(corrected["test_cindex"])
+    curve = body["recall_curve"]
+    i = curve["budgets"].index(0.1)
+    assert curve["recall"]["Cox"][i] == pytest.approx(corrected["test_recall_10pct"])
+    assert all(np.all(np.diff(r) >= 0) for r in curve["recall"].values())  # recall never falls as budget grows
+    assert body["paired_vs_epss"]["XGBoost-AFT"]["cindex"]["excludes_zero"] is False

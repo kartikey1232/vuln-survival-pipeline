@@ -83,6 +83,8 @@ class CVEResponse(BaseModel):
     last_modified_date: date
     description: str | None
     vuln_status: str | None
+    cna_source_identifier: str | None = Field(description="The CVE's own CNA (NVD sourceIdentifier); the model "
+                                                          "only uses CVSS/CWE whose source equals it")
     cvss_metrics: list[CVSSMetric]
     cwes: list[CWE]
     kev: KEVEntry | None
@@ -118,6 +120,21 @@ class WatchlistResponse(BaseModel):
     offset: int
     limit: int
     items: list[WatchlistItem]
+
+
+class BacktestResponse(BaseModel):
+    """Corrected-encoding test results (models/backtest_corrected_encoding.json)."""
+    source: str
+    test_rows: int
+    test_cves: int
+    test_events: int
+    bootstrap: str
+    models: dict
+    paired_vs_epss: dict
+    blind_spot_catch_rate_10pct: dict
+    time_dependent_auc_pooled: dict
+    fuzzy: dict
+    recall_curve: dict
 
 
 class ModelResponse(BaseModel):

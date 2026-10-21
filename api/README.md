@@ -10,6 +10,7 @@ Run: `uv run uvicorn api.main:app` (docs at `/docs`).
 |---|---|
 | `GET /cve/{id}` | CVE metadata, CVSS metrics, CWEs, KEV entry, EPSS history; per landmark (7/14/30): Cox partial hazard, `cox_risk_pct`, survival curve (days 1-365 after the landmark), fuzzy priority and the rules that fired; and why any landmark has no row |
 | `GET /watchlist?budget=0.10` | Top `budget` of test-period landmark rows **by Cox partial hazard**, each with its fuzzy explanation and `epss_ranks_low` (outside EPSS's own top `budget`, the blind-spot definition). Optional `landmark_day`, `limit`, `offset` |
+| `GET /backtest` | Corrected-encoding test results (`models/backtest_corrected_encoding.json`, from `scripts/evaluate/backtest_export.py`): model table, paired vs EPSS, blind-spot rates, fuzzy vs references, recall-at-budget curve |
 | `GET /model` | Frozen Cox/RSF/XGBoost metadata and test metrics, percentile-reference and serving-preprocessing metadata, the fuzzy rule base and cut-offs, known issues |
 
 Files:

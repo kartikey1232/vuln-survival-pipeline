@@ -43,6 +43,7 @@ def load_artifacts(models_dir: Path) -> FrozenArtifacts:
     metadata = {stem: _read_json(models_dir / f"{stem}.json") for stem in (
         "cox_final_metadata", "rsf_final_metadata", "xgboost_aft_final_metadata",
         "cox_risk_reference_metadata", "cox_serving_preprocessing", "fuzzy_config",
+        "backtest_corrected_encoding",
     )}
     return FrozenArtifacts(
         cox=cox["model"],

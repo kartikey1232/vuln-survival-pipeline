@@ -38,6 +38,9 @@ the API uses.
 
 ## Fuzzy-layer input reference
 
+- `backtest_corrected_encoding.json`: the corrected-encoding test results
+  served at `GET /backtest` for the dashboard (from
+  `scripts/evaluate/backtest_export.py`; nothing fit).
 - `cox_risk_reference.npz` / `cox_risk_reference_metadata.json` — frozen
   Cox's partial-hazard scores on the full train set, sorted, one array
   per landmark (7/14/30). `scripts/fuzzy/risk_percentile.py` maps any

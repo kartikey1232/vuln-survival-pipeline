@@ -21,7 +21,7 @@ from sqlalchemy import Engine
 
 from api import db, scoring
 from api.artifacts import FrozenArtifacts, get_artifacts
-from api.schemas import CVEResponse, ModelResponse, WatchlistResponse
+from api.schemas import BacktestResponse, CVEResponse, ModelResponse, WatchlistResponse
 from config.config_schema import get_config
 from database.engine import get_engine
 from scripts.evaluate.data_splits import DATA_CUTOFF
@@ -33,10 +33,10 @@ CALIBRATION_NOTE = (
     "probabilities."
 )
 ENCODING_ISSUE = (
-    "Recorded test metrics were computed with a test-time one-hot encoding bug (scripts/evaluate/features.py::"
-    "encode_for_model): 84,684 test rows had a category encoded as the training reference. The API scores with "
-    "correct encoding, so its Cox scores differ from the recorded test evaluation for those rows; Cox test "
-    "C-index under correct encoding is 0.8501 vs 0.8492 recorded. Recorded numbers have not been re-run."
+    "Each model's recorded 'test_metrics' were computed with a test-time one-hot encoding bug that mis-encoded "
+    "84,684 test rows; 'test_metrics_corrected_encoding' beside them is the same frozen model, correctly encoded "
+    "(Cox test C-index 0.8501 vs 0.8492 recorded). The API scores with the correct encoding. See "
+    "docs/results_corrected_encoding.md and GET /backtest."
 )
 
 app = FastAPI(title="Vulnerability survival API", version="1.0",
@@ -149,6 +149,11 @@ def get_watchlist(budget: float = Query(0.10, gt=0, le=1),
         "pool_rows": len(pool), "selected_rows": len(top), "selected_epss_ranks_low": int((~epss_top[top]).sum()),
         "offset": offset, "limit": limit, "items": items,
     }
+
+
+@app.get("/backtest", response_model=BacktestResponse)
+def get_backtest(art: FrozenArtifacts = Depends(get_artifacts)):
+    return art.metadata["backtest_corrected_encoding"]
 
 
 @app.get("/model", response_model=ModelResponse)
