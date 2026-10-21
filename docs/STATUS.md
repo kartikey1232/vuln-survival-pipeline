@@ -266,3 +266,26 @@ The reference is stored in `models/cox_risk_reference.npz`. Per-row
   vs train 0.181). The shift therefore follows the inputs, not the
   mapping. Fuzzy membership breakpoints must be chosen with this in mind
   (on fit/val, not test).
+
+## Addendum: fuzzy ranking layer (2026-10-21)
+
+`scripts/fuzzy/` builds a Mamdani fuzzy layer (scikit-fuzzy) over
+`cox_risk_pct`, `epss_pct_now`, CNA CVSS (with its own missing path) and
+`blindspot`. It was designed on validation only, frozen in
+`models/fuzzy_config.json` (commit `7177bf8`), and then evaluated once on
+test. Full write-up: `docs/fuzzy_layer.md`.
+
+- **Ranking result: null against a validation-fitted linear blend of the
+  same inputs.** No paired CI excludes zero.
+- **Worse than Cox alone at recall@10%** (-7.1pp, CI excludes zero).
+  Blind-spot catch rate 0.20 vs 0.31.
+- **Better than EPSS alone.**
+- The layer's value is interpretability: every rule's firing strength is
+  stored per row in `data/training/fuzzy_priority.parquet`.
+- Mamdani centroid output wasn't monotone in `cox_risk` with the literal
+  brief rules. The rule base was restructured until it passed a dense grid
+  check, which `design.py` enforces. As a result the thesis rule R02 is
+  explanation-only.
+- The top priority plateau holds about 6% of test rows. Ordering at
+  budgets of 5% or less is therefore the `cox_risk_pct` tie-break.
+- Test has been seen. Any fuzzy redesign needs a fresh validation period.
