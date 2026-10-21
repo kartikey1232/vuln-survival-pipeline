@@ -1,0 +1,582 @@
+{
+  "validation_quantiles": {
+    "cox_risk": {
+      "0.3": 0.2616006404808967,
+      "0.6": 0.47826334709694046,
+      "0.85": 0.7935886820405651,
+      "0.95": 0.8990210967678035
+    },
+    "epss": {
+      "0.3": 0.10196,
+      "0.6": 0.1634,
+      "0.85": 0.2766414999999999,
+      "0.95": 0.4174319999999998
+    },
+    "blindspot": {
+      "0.1": -0.05008393109709795,
+      "0.5": 0.2401229558585625,
+      "0.9": 0.5882798124049997
+    }
+  },
+  "membership_functions": {
+    "cox_risk": {
+      "Low": [
+        "trap",
+        [
+          0.0,
+          0.0,
+          0.2616006404808967,
+          0.47826334709694046
+        ]
+      ],
+      "Medium": [
+        "tri",
+        [
+          0.2616006404808967,
+          0.47826334709694046,
+          0.7935886820405651
+        ]
+      ],
+      "High": [
+        "tri",
+        [
+          0.47826334709694046,
+          0.7935886820405651,
+          0.8990210967678035
+        ]
+      ],
+      "VeryHigh": [
+        "trap",
+        [
+          0.7935886820405651,
+          0.8990210967678035,
+          1.0,
+          1.0
+        ]
+      ],
+      "AtLeastMedium": [
+        "trap",
+        [
+          0.2616006404808967,
+          0.47826334709694046,
+          1.0,
+          1.0
+        ]
+      ],
+      "AtLeastHigh": [
+        "trap",
+        [
+          0.47826334709694046,
+          0.7935886820405651,
+          1.0,
+          1.0
+        ]
+      ]
+    },
+    "epss": {
+      "Low": [
+        "trap",
+        [
+          0.0,
+          0.0,
+          0.10196,
+          0.1634
+        ]
+      ],
+      "Medium": [
+        "tri",
+        [
+          0.10196,
+          0.1634,
+          0.2766414999999999
+        ]
+      ],
+      "High": [
+        "tri",
+        [
+          0.1634,
+          0.2766414999999999,
+          0.4174319999999998
+        ]
+      ],
+      "VeryHigh": [
+        "trap",
+        [
+          0.2766414999999999,
+          0.4174319999999998,
+          1.0,
+          1.0
+        ]
+      ],
+      "AtLeastMedium": [
+        "trap",
+        [
+          0.10196,
+          0.1634,
+          1.0,
+          1.0
+        ]
+      ],
+      "AtLeastHigh": [
+        "trap",
+        [
+          0.1634,
+          0.2766414999999999,
+          1.0,
+          1.0
+        ]
+      ]
+    },
+    "blindspot": {
+      "EPSSHigher": [
+        "trap",
+        [
+          -1.0,
+          -1.0,
+          -0.05008393109709795,
+          0.2401229558585625
+        ]
+      ],
+      "Agrees": [
+        "tri",
+        [
+          -0.05008393109709795,
+          0.2401229558585625,
+          0.5882798124049997
+        ]
+      ],
+      "ModelHigher": [
+        "trap",
+        [
+          0.2401229558585625,
+          0.5882798124049997,
+          1.0,
+          1.0
+        ]
+      ]
+    },
+    "cvss": {
+      "Low": [
+        "trap",
+        [
+          0.0,
+          0.0,
+          3.9,
+          4.0
+        ]
+      ],
+      "Medium": [
+        "trap",
+        [
+          3.9,
+          4.0,
+          6.9,
+          7.0
+        ]
+      ],
+      "High": [
+        "trap",
+        [
+          6.9,
+          7.0,
+          8.9,
+          9.0
+        ]
+      ],
+      "Critical": [
+        "trap",
+        [
+          8.9,
+          9.0,
+          10.0,
+          10.0
+        ]
+      ]
+    },
+    "priority": {
+      "VeryLow": [
+        "trap",
+        [
+          0,
+          0,
+          10,
+          30
+        ]
+      ],
+      "Low": [
+        "tri",
+        [
+          10,
+          30,
+          50
+        ]
+      ],
+      "Medium": [
+        "tri",
+        [
+          30,
+          50,
+          70
+        ]
+      ],
+      "High": [
+        "tri",
+        [
+          50,
+          70,
+          90
+        ]
+      ],
+      "Critical": [
+        "trap",
+        [
+          70,
+          90,
+          100,
+          100
+        ]
+      ]
+    }
+  },
+  "rule_weights": {
+    "R01": 1.0,
+    "R02": 1.0,
+    "R03": 1.0,
+    "R04": 1.0,
+    "R05": 1.0,
+    "R06": 1.0,
+    "R07": 1.0,
+    "R08": 1.0,
+    "R09": 1.0,
+    "R10": 1.0,
+    "R11": 1.0,
+    "R12": 1.0,
+    "R13": 1.0,
+    "R14": 1.0,
+    "R15": 1.0,
+    "R16": 1.0,
+    "R17": 1.0
+  },
+  "rules": [
+    {
+      "id": "R01",
+      "text": "IF cox_risk is VeryHigh THEN priority is Critical",
+      "consequent": "Critical"
+    },
+    {
+      "id": "R02",
+      "text": "IF cox_risk is High AND epss is Low THEN priority is High",
+      "consequent": "High"
+    },
+    {
+      "id": "R03",
+      "text": "IF blindspot is ModelHigher AND cvss is Critical THEN priority is Critical",
+      "consequent": "Critical"
+    },
+    {
+      "id": "R04",
+      "text": "IF cox_risk is High or above AND epss is High THEN priority is Critical",
+      "consequent": "Critical"
+    },
+    {
+      "id": "R05",
+      "text": "IF cox_risk is Medium or above AND cvss is Critical THEN priority is High",
+      "consequent": "High"
+    },
+    {
+      "id": "R06",
+      "text": "IF cox_risk is Low AND epss is Low AND cvss is not Critical THEN priority is VeryLow",
+      "consequent": "VeryLow"
+    },
+    {
+      "id": "R07",
+      "text": "IF cox_risk is Low THEN priority is Low",
+      "consequent": "Low"
+    },
+    {
+      "id": "R08",
+      "text": "IF cox_risk is Medium THEN priority is Medium",
+      "consequent": "Medium"
+    },
+    {
+      "id": "R09",
+      "text": "IF cox_risk is Medium or above THEN priority is High",
+      "consequent": "High"
+    },
+    {
+      "id": "R10",
+      "text": "IF epss is VeryHigh THEN priority is High",
+      "consequent": "High"
+    },
+    {
+      "id": "R11",
+      "text": "IF cox_risk is High or above AND epss is VeryHigh THEN priority is Critical",
+      "consequent": "Critical"
+    },
+    {
+      "id": "R12",
+      "text": "IF cox_risk is Medium or above AND epss is High THEN priority is High",
+      "consequent": "High"
+    },
+    {
+      "id": "R13",
+      "text": "IF epss is High THEN priority is Medium",
+      "consequent": "Medium"
+    },
+    {
+      "id": "R14",
+      "text": "IF cox_risk is High or above AND cvss is Critical THEN priority is Critical",
+      "consequent": "Critical"
+    },
+    {
+      "id": "R15",
+      "text": "IF blindspot is Agrees AND cox_risk is Medium AND epss is Medium THEN priority is Medium",
+      "consequent": "Medium"
+    },
+    {
+      "id": "R16",
+      "text": "IF cvss is Missing AND cox_risk is Low AND epss is Low THEN priority is Low",
+      "consequent": "Low"
+    },
+    {
+      "id": "R17",
+      "text": "IF blindspot is EPSSHigher AND cox_risk is Low THEN priority is Low",
+      "consequent": "Low"
+    }
+  ],
+  "tie_break": "priority, then cox_risk_pct, then epss_pct_now (fuzzy_layer.ranking_score)",
+  "linear_blend": {
+    "model": "CoxPHFitter (lifelines), fitted on validation",
+    "penalizer": 0.0,
+    "features": [
+      "cox_risk_pct",
+      "epss_pct_now",
+      "cvss_base_filled",
+      "cvss_cna_missing"
+    ],
+    "coefficients": {
+      "cox_risk_pct": 2.645862482290379,
+      "epss_pct_now": 3.0675799100301786,
+      "cvss_base_filled": 8.326127829215359,
+      "cvss_cna_missing": 6.47890128921954
+    },
+    "note": "blindspot omitted: it equals cox_risk_pct - epss_pct_now exactly"
+  },
+  "monotonicity_check": {
+    "grid": "cox_risk step 0.001 x 101 epss values x 4 CVSS bands + missing",
+    "worst_step": 0.0
+  },
+  "validation": {
+    "rows": 53674,
+    "cves": 18973,
+    "events": 55,
+    "cox_in_sample_caveat": "frozen Cox was fit on the full train set, which includes these rows",
+    "metrics": {
+      "Fuzzy": {
+        "label": "val Fuzzy",
+        "n_test_rows": 53674,
+        "n_test_cves": 18973,
+        "n_events": 55,
+        "cindex": {
+          "point": 0.8576270770033628,
+          "mean": 0.8486192905595676,
+          "ci_lower": 0.7287467259754931,
+          "ci_upper": 0.9454583314838864,
+          "n": 200
+        },
+        "recall_at_budget": {
+          "1pct": {
+            "point": 0.23636363636363636,
+            "mean": 0.2359315570950853,
+            "ci_lower": 0.08939676616915422,
+            "ci_upper": 0.4121848739495799,
+            "n": 200
+          },
+          "5pct": {
+            "point": 0.4727272727272727,
+            "mean": 0.46297485247828435,
+            "ci_lower": 0.2710244267198405,
+            "ci_upper": 0.6568080357142858,
+            "n": 200
+          },
+          "10pct": {
+            "point": 0.6909090909090909,
+            "mean": 0.6805770621568499,
+            "ci_lower": 0.4878294573643411,
+            "ci_upper": 0.8523737373737375,
+            "n": 200
+          }
+        }
+      },
+      "Cox": {
+        "label": "val Cox",
+        "n_test_rows": 53674,
+        "n_test_cves": 18973,
+        "n_events": 55,
+        "cindex": {
+          "point": 0.8586318241370591,
+          "mean": 0.8512748134325873,
+          "ci_lower": 0.7350226777716342,
+          "ci_upper": 0.9448837453045444,
+          "n": 200
+        },
+        "recall_at_budget": {
+          "1pct": {
+            "point": 0.2545454545454545,
+            "mean": 0.25842615099974237,
+            "ci_lower": 0.10517395182872435,
+            "ci_upper": 0.4320521390374332,
+            "n": 200
+          },
+          "5pct": {
+            "point": 0.5272727272727272,
+            "mean": 0.5267146841942775,
+            "ci_lower": 0.3187267080745341,
+            "ci_upper": 0.7023164035689774,
+            "n": 200
+          },
+          "10pct": {
+            "point": 0.6727272727272727,
+            "mean": 0.6597929423871055,
+            "ci_lower": 0.4700505879135904,
+            "ci_upper": 0.8382794117647059,
+            "n": 200
+          }
+        }
+      },
+      "EPSS": {
+        "label": "val EPSS",
+        "n_test_rows": 53674,
+        "n_test_cves": 18973,
+        "n_events": 55,
+        "cindex": {
+          "point": 0.6719739934843928,
+          "mean": 0.6753184080429024,
+          "ci_lower": 0.5616829242066256,
+          "ci_upper": 0.7984383114571465,
+          "n": 200
+        },
+        "recall_at_budget": {
+          "1pct": {
+            "point": 0.23636363636363636,
+            "mean": 0.2359315570950853,
+            "ci_lower": 0.08939676616915422,
+            "ci_upper": 0.4121848739495799,
+            "n": 200
+          },
+          "5pct": {
+            "point": 0.23636363636363636,
+            "mean": 0.2370299337526282,
+            "ci_lower": 0.08939676616915422,
+            "ci_upper": 0.4121848739495799,
+            "n": 200
+          },
+          "10pct": {
+            "point": 0.4,
+            "mean": 0.4074297323957207,
+            "ci_lower": 0.24583517944173683,
+            "ci_upper": 0.6065895210543234,
+            "n": 200
+          }
+        }
+      },
+      "Linear blend": {
+        "label": "val Linear blend",
+        "n_test_rows": 53674,
+        "n_test_cves": 18973,
+        "n_events": 55,
+        "cindex": {
+          "point": 0.8616473362975915,
+          "mean": 0.8531952650339355,
+          "ci_lower": 0.7350186482055782,
+          "ci_upper": 0.9512810148311384,
+          "n": 200
+        },
+        "recall_at_budget": {
+          "1pct": {
+            "point": 0.2545454545454545,
+            "mean": 0.2528459677422453,
+            "ci_lower": 0.10168877425693934,
+            "ci_upper": 0.4316176470588236,
+            "n": 200
+          },
+          "5pct": {
+            "point": 0.5454545454545454,
+            "mean": 0.5399467277724086,
+            "ci_lower": 0.33295454545454545,
+            "ci_upper": 0.7506944444444446,
+            "n": 200
+          },
+          "10pct": {
+            "point": 0.6727272727272727,
+            "mean": 0.6584310770140759,
+            "ci_lower": 0.4113970588235294,
+            "ci_upper": 0.8572896281800392,
+            "n": 200
+          }
+        }
+      }
+    },
+    "blind_spot_catch_rate_10pct": {
+      "Fuzzy": {
+        "point": 0.48484848484848486,
+        "mean": 0.46097838248374146,
+        "ci_lower": 0.19972972972972974,
+        "ci_upper": 0.7242636494252874,
+        "n": 200
+      },
+      "Cox": {
+        "point": 0.45454545454545453,
+        "mean": 0.4286919098853811,
+        "ci_lower": 0.16666666666666666,
+        "ci_upper": 0.7144285714285715,
+        "n": 200
+      },
+      "Linear blend": {
+        "point": 0.6060606060606061,
+        "mean": 0.5887505687686425,
+        "ci_lower": 0.29973684210526313,
+        "ci_upper": 0.8714157706093191,
+        "n": 200
+      }
+    },
+    "fuzzy_untied_priority_cindex_note": "C-index of raw priority (ties scored 0.5) is in tie_summary",
+    "tie_summary": {
+      "share_rows_in_tie_blocks": 0.7059656444461005,
+      "distinct_priorities_in_top_10pct": 1440,
+      "rows_in_top_10pct": 5368,
+      "largest_tie_blocks": {
+        "20.4762": 4073,
+        "79.5238": 2735,
+        "30.0000": 2317
+      }
+    },
+    "rule_fire_share": {
+      "R01": 0.15,
+      "R02": 0.1495,
+      "R03": 0.0586,
+      "R04": 0.1979,
+      "R05": 0.0595,
+      "R06": 0.2461,
+      "R07": 0.6,
+      "R08": 0.55,
+      "R09": 0.7,
+      "R10": 0.15,
+      "R11": 0.1317,
+      "R12": 0.282,
+      "R13": 0.3497,
+      "R14": 0.0593,
+      "R15": 0.3024,
+      "R16": 0.1994,
+      "R17": 0.4732
+    },
+    "priority_quantiles_10_50_90_99": [
+      20.785,
+      52.173,
+      75.576,
+      79.524
+    ]
+  },
+  "designed_at_utc": "2026-10-21T11:46:05.419093+00:00",
+  "design_data": "validation rows only (train split, published 2024-07-01..2024-12-31)"
+}

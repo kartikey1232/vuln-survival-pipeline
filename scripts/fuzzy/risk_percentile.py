@@ -19,8 +19,9 @@ training-period distribution exists.
 Outputs:
 - models/cox_risk_reference.npz (+ _metadata.json): the per-landmark
   sorted training scores. A deployment artifact tied to cox_final.pkl.
-- data/training/cox_risk_pct.parquet: cox_risk_pct and epss_pct_now for
-  every train and test row (regenerable, not committed).
+- data/training/cox_risk_pct.parquet: cox_risk_pct, epss_pct_now and the
+  raw (unimputed) CNA CVSS base score for every train and test row — the
+  fuzzy layer's inputs (regenerable, not committed).
 
 Usage: python -m scripts.fuzzy.risk_percentile
 """
@@ -142,6 +143,11 @@ def main():
             "cox_risk_score": score,
             "cox_risk_pct": reference.percentile(score, df["landmark_day"]),
             "epss_pct_now": df["epss_pct_now"].values.astype(float),
+            # _prep median-imputes cvss_base_score; cvss_cna_missing is
+            # exactly "no CNA-supplied score", so restore the NaN.
+            "cvss_base_score": df["cvss_base_score"].where(df["cvss_cna_missing"] == 0).values.astype(float),
+            "cvss_cna_missing": df["cvss_cna_missing"].astype(bool).values,
+            "published_date": (df["as_of_date"] - pd.to_timedelta(df["landmark_day"].astype(int), unit="D")).values,
             "event_time": df["event_time"].values,
             "composite_event": df["composite_event"].values.astype(bool),
         }))

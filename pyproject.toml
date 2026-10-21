@@ -28,6 +28,7 @@ dependencies = [
     "lifelines>=0.30.3",
     "scikit-fuzzy>=0.5.0",
     "tabulate>=0.10.0",
+    "networkx>=3.6.1",
 ]
 
 [project.scripts]

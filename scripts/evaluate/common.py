@@ -600,3 +600,65 @@ def km_calibration_table(
             "ratio": mean_pred / obs.point_estimate if obs.point_estimate > 0 else float("inf"),
         })
     return pd.DataFrame(rows)
+
+
+# --- Blind-spot catch rate ---
+#
+# A blind spot is a test event that EPSS-alone leaves OUTSIDE its top
+# `budget` of rows; the catch rate is the fraction of those a ranking puts
+# INSIDE its own top `budget`. Same top-k rule as recall_at_budget. Same
+# definition as final_comparison.py's step4 (which predates this function),
+# drawn here from _bootstrap_rows, i.e. the same CVE resamples as every
+# other metric in this module.
+
+def blind_spot_catch_rate(risk_score: np.ndarray, epss_score: np.ndarray, event: np.ndarray,
+                          budget: float = 0.10) -> float:
+    n_top = max(1, int(np.ceil(len(epss_score) * budget)))
+    in_epss_top = np.zeros(len(epss_score), dtype=bool)
+    in_epss_top[np.argsort(-epss_score)[:n_top]] = True
+    blind = (np.asarray(event) == 1) & ~in_epss_top
+    if not blind.any():
+        return np.nan
+    in_model_top = np.zeros(len(risk_score), dtype=bool)
+    in_model_top[np.argsort(-risk_score)[:n_top]] = True
+    return (blind & in_model_top).sum() / blind.sum()
+
+
+def evaluate_blind_spot_catch_rate(
+    test_df: pd.DataFrame,
+    risk_scores: dict[str, np.ndarray],
+    epss_score: np.ndarray,
+    *,
+    label: str,
+    budget: float = 0.10,
+    reference: str | None = None,
+    cve_id_col: str = "cve_id",
+    event_col: str = "composite_event",
+    n_resamples: int = 200,
+    seed: int = DEFAULT_SEED,
+    log_every: int = 20,
+) -> dict:
+    """Catch rate for every ranking in `risk_scores` on the same CVE
+    resamples. If `reference` names one of them, also the paired
+    difference (other - reference) per resample, like
+    paired_bootstrap_compare. Returns {"per_model": {name: {...}},
+    "paired_vs_reference": {name: {...}}}."""
+    cve_ids = test_df[cve_id_col].values
+    event = test_df[event_col].values.astype(int)
+    epss_score = np.asarray(epss_score, dtype=float)
+    names = list(risk_scores)
+
+    def stats(idx):
+        return [blind_spot_catch_rate(risk_scores[n][idx], epss_score[idx], event[idx], budget) for n in names]
+
+    point = stats(np.arange(len(event)))
+    samples = _bootstrap_rows(cve_ids, stats, len(names), n_resamples=n_resamples, seed=seed,
+                              log_every=log_every, log_label=f"{label} blind-spot")
+    out = {"per_model": {n: _summarize(point[k], samples[:, k]).as_dict() for k, n in enumerate(names)},
+           "paired_vs_reference": {}}
+    if reference is not None:
+        r = names.index(reference)
+        for k, n in enumerate(names):
+            if k != r:
+                out["paired_vs_reference"][n] = _summarize_diff(point[k] - point[r], samples[:, k] - samples[:, r])
+    return out
