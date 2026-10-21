@@ -26,3 +26,12 @@ C-index as approximate.
 
 The database already has a schema-only placeholder for model output —
 `training.prediction` — for a future serving/inference phase.
+
+## Fuzzy-layer input reference
+
+- `cox_risk_reference.npz` / `cox_risk_reference_metadata.json` — frozen
+  Cox's partial-hazard scores on the full train set, sorted, one array
+  per landmark (7/14/30). `scripts/fuzzy/risk_percentile.py` maps any
+  row's Cox score to `cox_risk_pct = #(reference <= score) / n` against
+  its own landmark's array. Derived from `cox_final.pkl` without refitting;
+  rebuild it if Cox is ever re-frozen.

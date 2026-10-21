@@ -245,3 +245,24 @@ C-index and recall. Full results are in `docs/model_comparison.md`'s
   - The fuzzy layer must not consume these raw probabilities without
     recalibration (on fit/val only) or a switch to rank-based inputs. That
     decision is still open.
+
+## Addendum: Cox risk percentiles for the fuzzy layer (2026-10-21)
+
+Open item resolved: the fuzzy layer uses rank-based inputs, not
+recalibrated probabilities. `scripts/fuzzy/risk_percentile.py` maps frozen
+Cox's score to `cox_risk_pct`, its percentile against the TRAINING-period
+score distribution of the row's own landmark. It uses the same "same or
+lower" definition as EPSS's percentile. Rows are never ranked within test.
+The reference is stored in `models/cox_risk_reference.npz`. Per-row
+`cox_risk_pct` + `epss_pct_now` for train and test go to
+`data/training/cox_risk_pct.parquet` (regenerable).
+
+- Train percentiles are uniform by construction: deciles land at
+  0.1/0.5/0.9 for every landmark.
+- **Test percentiles sit well below train.** The median `cox_risk_pct` is
+  0.33/0.26/0.25 at landmarks 7/14/30, and only 5.5% of test rows reach
+  ≥0.9 (10% by construction on train). Those rows hold 137 of 268 test
+  events (row-level). `epss_pct_now` drops the same way (test median 0.109
+  vs train 0.181). The shift therefore follows the inputs, not the
+  mapping. Fuzzy membership breakpoints must be chosen with this in mind
+  (on fit/val, not test).

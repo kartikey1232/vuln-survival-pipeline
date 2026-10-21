@@ -1,0 +1,14 @@
+{
+  "built_at_utc": "2026-10-21T11:10:35.958448+00:00",
+  "source_model": "cox_final.pkl",
+  "source_model_git_commit_hash": "0456e46363f6de0dbdccb866569e61d34999bbca",
+  "dataset_version": "landmark_v20260922",
+  "reference_period": "full train set (published < 2025-01-01)",
+  "score": "CoxPHFitter.predict_partial_hazard",
+  "percentile_definition": "#(reference scores <= x) / n_reference, per landmark_day",
+  "n_reference_rows": {
+    "7": 91447,
+    "14": 90867,
+    "30": 86630
+  }
+}
