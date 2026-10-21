@@ -283,13 +283,52 @@ regenerable) holds, per row:
 
 The thesis rule R02 fires on 7.9% of test rows.
 
-## Open questions this leaves
+## Conclusion
 
-- Whether a rule base that doesn't lift EPSS-high rows (dropping or
-  weakening R10, R12 and R13) would close the gap to Cox would be a new
-  design. It would need a fresh validation period, because test has now
-  been seen.
-- The two percentiles aren't fully on the same footing (see `blindspot`
-  above). Re-referencing EPSS's raw score against the same
-  training-landmark population as Cox would make `blindspot = 0` mean
-  agreement.
+**Fuzzy inference does not improve ranking over a linear blend of the
+same inputs.** No paired difference between the fuzzy ranking and the
+validation-fitted blend excludes zero, at any budget or on C-index. The
+fuzzy ranking also **underperforms Cox alone**:
+
+- recall@10%: 0.552 vs 0.623 (paired difference −0.071, CI excludes zero);
+- blind-spot catch rate at 10%: 0.20 vs 0.31.
+
+What the layer contributes is **per-row interpretability**: for every row,
+which rules fired and at what strength (`fire_R01..fire_R17`,
+`rules_fired`).
+
+**The system therefore RANKS by Cox and EXPLAINS by fuzzy rules.** The
+watchlist and every budget-based ordering use the frozen Cox partial
+hazard. The fuzzy priority and its fired rules are shown alongside as the
+explanation, never as the ordering.
+
+The layer is final as frozen in `models/fuzzy_config.json`. Test has been
+seen, so any change now would be tuning against test results. **A
+redesign would require a fresh validation period**, for example data
+published after the current 2026-09-20 cutoff, with the test period
+re-defined after it.
+
+### Limitations
+
+1. **Validation is in-sample for Cox.** The frozen Cox model was refit on
+   the full train set, which contains the validation rows. The blend
+   weights and all validation metrics are therefore optimistic. The
+   cut-offs are label-free input quantiles and are not affected.
+2. **The top of the ranking is one tie.** VeryHigh saturates at the
+   validation 95th percentile, which puts about 6% of test rows (10,750) on
+   one score (79.52). The top 1-5% is therefore ordered by the tie-break
+   (`cox_risk_pct`, then `epss_pct_now`), not by the rules.
+3. **R02, the thesis rule, is subsumed by R09** (same consequent, and
+   R02's firing ≤ R09's), so it doesn't affect the score. It still fires
+   and is shown as an explanation.
+4. **Rule weights were left at 1.0.** 55 validation events (one event =
+   1.8pp of recall) cannot support a weight search.
+
+### Candidate changes for future work (fresh validation period required)
+
+- Put EPSS's raw score on the same reference distribution as Cox (the
+  training-period landmark rows), so that `blindspot = 0` means agreement.
+- Break the top-end tie: for example, saturate VeryHigh higher, or add a
+  level above it, so the rules discriminate within the top 5%.
+- Whether dropping or weakening the rules that lift EPSS-high rows (R10,
+  R12, R13) closes the gap to Cox.

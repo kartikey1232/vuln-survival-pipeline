@@ -289,3 +289,18 @@ test. Full write-up: `docs/fuzzy_layer.md`.
 - The top priority plateau holds about 6% of test rows. Ordering at
   budgets of 5% or less is therefore the `cox_risk_pct` tie-break.
 - Test has been seen. Any fuzzy redesign needs a fresh validation period.
+
+**Decision (final): the system RANKS by Cox and EXPLAINS by fuzzy rules.**
+The fuzzy layer is frozen as shipped and is not to be redesigned against
+these test results. The watchlist orders by the frozen Cox partial hazard;
+the fuzzy priority and fired rules are attached as the explanation. See
+`docs/fuzzy_layer.md` "Conclusion" for the four limitations (Cox in-sample
+on validation, the ~6% top-end tie, R02 subsumed by R09, weights left at
+1.0).
+
+Candidate changes for any future work, which needs a fresh validation
+period:
+1. Put EPSS's raw score on the same reference distribution as Cox, so
+   `blindspot = 0` means agreement.
+2. Break the top-end tie (VeryHigh saturating at the validation 95th
+   percentile flattens the top ~6% of test rows).
