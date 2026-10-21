@@ -48,5 +48,11 @@
     "test_recall_5pct": 0.4253731343283582,
     "test_recall_10pct": 0.5111940298507462
   },
-  "note": "risk_score = -predicted_time (AFT predicts time; higher time = lower risk)"
+  "note": "risk_score = -predicted_time (AFT predicts time; higher time = lower risk)",
+  "test_metrics_corrected_encoding": {
+    "test_cindex": 0.785218457121715,
+    "test_recall_5pct": 0.4253731343283582,
+    "test_recall_10pct": 0.503731343283582,
+    "note": "Same frozen model, test frame one-hot encoded relative to the TRAINING frame's categories (scripts/evaluate/features.py::encode_for_model). 'test_metrics' above were computed with the original encoding, which dropped the test frame's own first category. Nothing refit. See docs/results_corrected_encoding.md."
+  }
 }

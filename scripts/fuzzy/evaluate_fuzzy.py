@@ -16,7 +16,11 @@ Also writes the per-row explanation (priority + every rule's firing
 strength) for validation and test rows to
 data/training/fuzzy_priority.parquet — what the dashboard reads.
 
-Usage: python -m scripts.fuzzy.evaluate_fuzzy
+The first run (027c468, docs/fuzzy_layer.md's original tables) used the
+original test encoding (--encoding original); the default is the
+corrected one (docs/results_corrected_encoding.md).
+
+Usage: python -m scripts.fuzzy.evaluate_fuzzy [--encoding original]
 """
 
 from __future__ import annotations
@@ -30,7 +34,8 @@ from config.config_schema import get_config
 from scripts.common.logging_utils import get_logger, log_with_fields
 from scripts.evaluate.common import evaluate_blind_spot_catch_rate, evaluate_model, paired_bootstrap_compare
 from scripts.fuzzy import fuzzy_layer as fl
-from scripts.fuzzy.design import load_inputs, rankings, validation_rows
+from scripts.fuzzy.design import rankings, validation_rows
+from scripts.fuzzy.risk_percentile import OUTPUT_FILENAMES
 
 logger = get_logger(__name__, category="fuzzy")
 
@@ -49,8 +54,11 @@ def explanation_frame(df: pd.DataFrame, split: str, priority, firing: pd.DataFra
     return out
 
 
-def main():
+def main(encoding: str = "corrected"):
+    """`encoding` picks which cox_risk_pct parquet (risk_percentile.py
+    --encoding) is scored; the frozen design is the same either way."""
     cfg = get_config()
+    suffix = "" if encoding == "corrected" else "_original_encoding"
     config_path = cfg.project_root / "models" / "fuzzy_config.json"
     if not config_path.exists():
         raise RuntimeError("models/fuzzy_config.json missing: run scripts.fuzzy.design (validation only) first")
@@ -58,7 +66,7 @@ def main():
     if config.get("monotonicity_check", {}).get("worst_step", -1) < -1e-9:
         raise RuntimeError("frozen fuzzy config has no passing monotonicity check")
 
-    inputs = load_inputs(cfg)
+    inputs = pd.read_parquet(cfg.project_root / "data" / "training" / OUTPUT_FILENAMES[encoding])
     test = inputs[inputs["split"] == "test"].reset_index(drop=True)
     val = validation_rows(inputs)
 
@@ -92,14 +100,19 @@ def main():
                           fl.ranking_score(val_priority, val["cox_risk_pct"].to_numpy(), val["epss_pct_now"].to_numpy())),
         explanation_frame(test, "test", priority, firing, scores["Fuzzy"]),
     ], ignore_index=True)
-    out_path = cfg.project_root / "data" / "training" / "fuzzy_priority.parquet"
+    out_path = cfg.project_root / "data" / "training" / f"fuzzy_priority{suffix}.parquet"
     explanations.to_parquet(out_path, index=False)
     log_with_fields(logger, logging.INFO, "fuzzy explanations written", path=str(out_path), rows=len(explanations))
 
-    with open(cfg.project_root / "scratch" / "fuzzy_evaluation.json", "w") as f:
+    results["encoding"] = encoding
+    with open(cfg.project_root / "scratch" / f"fuzzy_evaluation{suffix}.json", "w") as f:
         json.dump(results, f, indent=2, default=str)
     print(json.dumps(results, indent=2, default=str))
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--encoding", choices=["corrected", "original"], default="corrected")
+    main(parser.parse_args().encoding)

@@ -1,5 +1,13 @@
 # Model comparison — landmark KEV prediction
 
+> **Computed with the test-time encoding bug.** Every test number in
+> this document was computed with an encoding that mis-encoded 84,684 test
+> rows (a category given as the training reference category). The tables
+> are kept as originally recorded. **Corrected numbers, from the same frozen
+> models with nothing refit: [`docs/results_corrected_encoding.md`](results_corrected_encoding.md).**
+> No conclusion changed: Cox still leads (C-index 0.850 corrected), and
+> XGBoost-AFT vs EPSS is still non-significant.
+
 All numbers below are computed on the SAME test set (published >= 2025-01-01,
 178,756 rows / 60,962 CVEs / 268 events) through `scripts/evaluate/common.py`,
 using `training.training_dataset` (`dataset_version=landmark_v20260922`,
@@ -7,8 +15,9 @@ rebuilt after the CVSS/CWE own-CNA-only source fix — see Limitations). Every
 model and EPSS-alone go through the identical bootstrap machinery (same seed,
 same CVE-level resampling), so comparisons here are apples-to-apples.
 
-Chosen configs (tuned on the fit/val split, never on test):
-- **Cox PH**: penalizer=0.1
+Chosen configs (RSF and XGBoost-AFT tuned on the fit/val split, never on test; their validation inputs
+had `epss_model_version_at_asof` mis-encoded, see results_corrected_encoding.md):
+- **Cox PH**: penalizer=0.1 (a fixed value, never tuned)
 - **RSF**: min_samples_leaf=50, max_features=log2, n_estimators=200, max_samples=20,000
 - **XGBoost-AFT**: aft_loss_distribution=extreme, aft_loss_distribution_scale=1.2, max_depth=6, learning_rate=0.05, n_rounds=272
 
@@ -149,6 +158,9 @@ Limitations). Any RSF number in this document should be read as "≈0.81 ±
 ![Recall at alert budget](figures/recall_at_budget.png)
 
 ## Post-freeze secondary metrics: time-dependent AUC, Brier score, calibration
+
+> Original encoding. Corrected time-dependent AUC, Brier, IPA and
+> calibration: [`results_corrected_encoding.md`](results_corrected_encoding.md).
 
 **These were computed after the models were frozen (commit f0a07b2) and did
 not influence model selection, tuning, or features.** They use the frozen
@@ -291,8 +303,13 @@ probabilities are too compressed toward the base rate, i.e.
 
 The ranking is still good (C-index 0.849, AUC 0.85), because a Cox model's
 ranking depends only on the order of its linear predictor, not its spread.
-The penalizer (0.1) was chosen on C-index, which is scale-free, so nothing
-in model selection would have noticed the compression.
+The penalizer (0.1) was never tuned. It was a fixed value set in the first
+preliminary Cox baseline (`5233885`, "untuned CoxPHFitter
+(penalizer=0.1)"), before the fit/validation split existed, and it was
+kept unchanged since. (An earlier version of this sentence said it was
+"chosen on C-index"; the history doesn't support that.) No probability-scale
+criterion was ever applied, so nothing in model development would have
+noticed the compression.
 
 **Consequence for the planned fuzzy layer:** it will inherit these
 compressed probabilities if it consumes 1 − S(t|x) from the frozen Cox

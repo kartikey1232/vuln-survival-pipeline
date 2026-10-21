@@ -30,7 +30,7 @@ from config.config_schema import get_config
 from scripts.common.logging_utils import get_logger, log_with_fields
 from scripts.evaluate.common import evaluate_model, evaluate_model_per_landmark
 from scripts.evaluate.data_splits import load_full_train_and_test, load_splits
-from scripts.evaluate.features import impute_numeric, one_hot, prepare_raw
+from scripts.evaluate.features import encode_for_model, impute_numeric, one_hot, prepare_raw
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 
 logger = get_logger(__name__, category="evaluate")
@@ -73,7 +73,7 @@ def main() -> None:
     fit_df, val_df = impute_numeric(fit_df, val_df)
 
     X_fit = one_hot(fit_df, MODEL_FEATURE_COLUMNS)
-    X_val = one_hot(val_df, MODEL_FEATURE_COLUMNS, align_to=list(X_fit.columns))
+    X_val = encode_for_model(val_df, list(X_fit.columns))
     y_fit = _to_structured_y(fit_df["event_time"].values, fit_df["composite_event"].values)
     y_val = _to_structured_y(val_df["event_time"].values, val_df["composite_event"].values)
 
@@ -126,7 +126,7 @@ def main() -> None:
     train_df, test_df = impute_numeric(train_df, test_df)
 
     X_train = one_hot(train_df, MODEL_FEATURE_COLUMNS)
-    X_test = one_hot(test_df, MODEL_FEATURE_COLUMNS, align_to=list(X_train.columns))
+    X_test = encode_for_model(test_df, list(X_train.columns))
     y_train = _to_structured_y(train_df["event_time"].values, train_df["composite_event"].values)
 
     final_rsf, final_max_samples = _fit_rsf(X_train, y_train, min_samples_leaf=leaf, max_features=feat)

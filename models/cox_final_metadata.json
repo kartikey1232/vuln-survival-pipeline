@@ -40,5 +40,11 @@
     "test_cindex": 0.8492200038389744,
     "test_recall_5pct": 0.48507462686567165,
     "test_recall_10pct": 0.6231343283582089
+  },
+  "test_metrics_corrected_encoding": {
+    "test_cindex": 0.8500851640327036,
+    "test_recall_5pct": 0.4962686567164179,
+    "test_recall_10pct": 0.6305970149253731,
+    "note": "Same frozen model, test frame one-hot encoded relative to the TRAINING frame's categories (scripts/evaluate/features.py::encode_for_model). 'test_metrics' above were computed with the original encoding, which dropped the test frame's own first category. Nothing refit. See docs/results_corrected_encoding.md."
   }
 }

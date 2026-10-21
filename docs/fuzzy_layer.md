@@ -1,5 +1,15 @@
 # Fuzzy ranking layer
 
+> **Computed with the test-time encoding bug.** Every test number in
+> this document was computed with an encoding that mis-encoded 84,684 test
+> rows (a category given as the training reference category). The tables
+> are kept as originally recorded. **Corrected numbers, from the same frozen
+> models with nothing refit: [`docs/results_corrected_encoding.md`](results_corrected_encoding.md).**
+> The design (cut-offs, rules, blend) was
+> unaffected. No conclusion changed: fuzzy still doesn't beat the linear
+> blend, and it loses to Cox by more (recall@10% −9.7pp; blind-spot −0.131,
+> now significant).
+
 A Mamdani fuzzy layer that turns four inputs into a 0-100 patching
 priority, with the firing strength of every rule stored per row as the
 explanation. Code: `scripts/fuzzy/` (`fuzzy_layer.py` inference,
@@ -221,6 +231,9 @@ decided on validation.
 
 ## Test evaluation (run once, after the design commit)
 
+> Original encoding. Corrected tables: [`results_corrected_encoding.md`](results_corrected_encoding.md#fuzzy-layer-vs-references-corrected).
+> That re-run is a correctness fix, not a redesign: the design file is unchanged.
+
 178,756 rows, 60,962 CVEs, 268 events. All numbers come from
 `scripts/evaluate/common.py`: seed 20260922, 200 whole-CVE resamples, the
 same resamples for every ranking. Raw output is in
@@ -284,6 +297,10 @@ regenerable) holds, per row:
 The thesis rule R02 fires on 7.9% of test rows.
 
 ## Conclusion
+
+Figures below are as originally recorded. Under corrected encoding: recall@10% is 0.534 vs 0.631,
+and blind-spot catch is 0.21 vs 0.34 (CI now excludes zero). See
+[`results_corrected_encoding.md`](results_corrected_encoding.md).
 
 **Fuzzy inference does not improve ranking over a linear blend of the
 same inputs.** No paired difference between the fuzzy ranking and the

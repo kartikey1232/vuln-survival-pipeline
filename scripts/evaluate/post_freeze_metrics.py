@@ -48,7 +48,7 @@ from scripts.evaluate.common import (
     survival_array,
     time_dependent_auc,
 )
-from scripts.evaluate.features import one_hot
+from scripts.evaluate.features import encode_against
 from scripts.evaluate.final_comparison import _prep
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 
@@ -58,24 +58,25 @@ BRIER_TIMES = np.arange(30, 181, dtype=float)  # daily grid for the integrated B
 CALIBRATION_HORIZON = 90
 
 
-def load_frozen_predictions(test_df, models_dir):
+def load_frozen_predictions(test_df, models_dir, *, encoding="original"):
     """Risk scores (higher = higher risk) from the three frozen models, plus
-    the frozen Cox model and its test design matrix for survival curves."""
-    X_test = one_hot(test_df, MODEL_FEATURE_COLUMNS)
-
+    the frozen Cox model and its test design matrix for survival curves.
+    encoding="original" reproduces the recorded numbers (and this script's
+    own outputs); "corrected" is what scripts/evaluate/corrected_encoding.py
+    uses — see scripts/evaluate/features.py::encode_against."""
     with open(models_dir / "cox_final.pkl", "rb") as f:
         cox = pickle.load(f)
-    X_cox = X_test.reindex(columns=cox["one_hot_columns"], fill_value=0).drop(columns=cox["dropped_const_cols"])
+    X_cox = encode_against(test_df, cox["one_hot_columns"], encoding=encoding).drop(columns=cox["dropped_const_cols"])
 
     with open(models_dir / "rsf_final.pkl", "rb") as f:
         rsf = pickle.load(f)
-    X_rsf = X_test.reindex(columns=rsf["one_hot_columns"], fill_value=0)
+    X_rsf = encode_against(test_df, rsf["one_hot_columns"], encoding=encoding)
 
     booster = xgb.Booster()
     booster.load_model(str(models_dir / "xgboost_aft_final.json"))
     with open(models_dir / "xgboost_aft_final_columns.json") as f:
         xgb_cols = json.load(f)["one_hot_columns"]
-    X_xgb = X_test.reindex(columns=xgb_cols, fill_value=0)
+    X_xgb = encode_against(test_df, xgb_cols, encoding=encoding)
 
     scores = {
         "Cox": cox["model"].predict_partial_hazard(X_cox).values,

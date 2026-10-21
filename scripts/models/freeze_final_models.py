@@ -23,7 +23,7 @@ from sksurv.util import Surv
 from config.config_schema import get_config
 from scripts.evaluate.common import fast_concordance_index, recall_at_budget
 from scripts.evaluate.final_comparison import RSF_CONFIG, XGB_CONFIG, _fit_cox, _prep
-from scripts.evaluate.features import one_hot
+from scripts.evaluate.features import encode_for_model, one_hot
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 from scripts.models.xgboost_aft import _to_dmatrix
 
@@ -68,7 +68,7 @@ def main():
 
     # --- Cox ---
     X_train = one_hot(train_df, MODEL_FEATURE_COLUMNS)
-    X_test = one_hot(test_df, MODEL_FEATURE_COLUMNS, align_to=list(X_train.columns))
+    X_test = encode_for_model(test_df, list(X_train.columns))
     X_train_cox_raw = X_train.copy()
     X_train_cox_raw["event_time"] = train_df["event_time"].clip(lower=0.5)
     X_train_cox_raw["composite_event"] = train_df["composite_event"].astype(int)

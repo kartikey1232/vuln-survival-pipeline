@@ -30,7 +30,7 @@ from scripts.evaluate.common import (
     recall_at_budget,
 )
 from scripts.evaluate.data_splits import load_full_train_and_test
-from scripts.evaluate.features import impute_numeric, one_hot, prepare_raw
+from scripts.evaluate.features import encode_for_model, impute_numeric, one_hot, prepare_raw
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 from scripts.models.xgboost_aft import _fix_zero_durations, _to_dmatrix
 
@@ -58,7 +58,7 @@ def _prep():
 
 def _fit_xgb(train_df, test_df, feature_cols, config=XGB_CONFIG):
     X_train = one_hot(train_df, feature_cols)
-    X_test = one_hot(test_df, feature_cols, align_to=list(X_train.columns))
+    X_test = encode_for_model(test_df, list(X_train.columns))
     duration = train_df["event_time"].values
     event = train_df["composite_event"].values.astype(bool)
     dtrain = _to_dmatrix(X_train, duration, event)
@@ -75,7 +75,7 @@ def _fit_xgb(train_df, test_df, feature_cols, config=XGB_CONFIG):
 
 def _fit_rsf(train_df, test_df, feature_cols, *, random_state=0):
     X_train = one_hot(train_df, feature_cols)
-    X_test = one_hot(test_df, feature_cols, align_to=list(X_train.columns))
+    X_test = encode_for_model(test_df, list(X_train.columns))
     y_train = Surv.from_arrays(event=train_df["composite_event"].values.astype(bool),
                                 time=train_df["event_time"].values.astype(float))
     rsf = RandomSurvivalForest(
@@ -89,7 +89,7 @@ def _fit_rsf(train_df, test_df, feature_cols, *, random_state=0):
 
 def _fit_cox(train_df, test_df, feature_cols):
     X_train = one_hot(train_df, feature_cols)
-    X_test = one_hot(test_df, feature_cols, align_to=list(X_train.columns))
+    X_test = encode_for_model(test_df, list(X_train.columns))
     X_train = X_train.copy()
     X_train["event_time"] = train_df["event_time"].clip(lower=0.5)
     X_train["composite_event"] = train_df["composite_event"].astype(int)

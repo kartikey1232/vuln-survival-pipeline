@@ -23,7 +23,13 @@ Outputs:
   raw (unimputed) CNA CVSS base score for every train and test row — the
   fuzzy layer's inputs (regenerable, not committed).
 
-Usage: python -m scripts.fuzzy.risk_percentile
+Test rows are encoded with encode_for_model ("corrected", default) or
+the original batch path (--encoding original, which reproduces the
+numbers recorded before 2026-10-21 into cox_risk_pct_original_encoding.parquet);
+see docs/results_corrected_encoding.md. Training rows, and so the
+reference, are identical under both.
+
+Usage: python -m scripts.fuzzy.risk_percentile [--encoding original]
 """
 
 from __future__ import annotations
@@ -41,13 +47,14 @@ import pandas as pd
 from config.config_schema import get_config
 from scripts.common.logging_utils import get_logger, log_with_fields
 from scripts.evaluate.common import fast_concordance_index
-from scripts.evaluate.features import one_hot
+from scripts.evaluate.features import encode_against
 from scripts.evaluate.final_comparison import _prep
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 
 logger = get_logger(__name__, category="fuzzy")
 
 REFERENCE_FILENAME = "cox_risk_reference.npz"
+OUTPUT_FILENAMES = {"corrected": "cox_risk_pct.parquet", "original": "cox_risk_pct_original_encoding.parquet"}
 
 
 @dataclass
@@ -90,13 +97,15 @@ class RiskReference:
             return cls({int(k.removeprefix("landmark_")): data[k] for k in data.files})
 
 
-def _cox_scores(df: pd.DataFrame, cox: dict) -> np.ndarray:
-    """Frozen Cox partial hazard, prepared exactly as at freeze time."""
-    X = one_hot(df, MODEL_FEATURE_COLUMNS).reindex(columns=cox["one_hot_columns"], fill_value=0)
+def _cox_scores(df: pd.DataFrame, cox: dict, encoding: str) -> np.ndarray:
+    """Frozen Cox partial hazard. Both encodings give identical scores on
+    the TRAIN frame (its own first categories are the reference), so the
+    reference distribution doesn't depend on `encoding`; test rows do."""
+    X = encode_against(df, cox["one_hot_columns"], encoding=encoding)
     return cox["model"].predict_partial_hazard(X.drop(columns=cox["dropped_const_cols"])).values
 
 
-def main():
+def main(encoding: str = "corrected"):
     cfg = get_config()
     models_dir = cfg.project_root / "models"
     train_df, test_df = _prep()
@@ -105,31 +114,41 @@ def main():
         cox = pickle.load(f)
     with open(models_dir / "cox_final_metadata.json") as f:
         cox_meta = json.load(f)
+    with open(models_dir / "cox_serving_preprocessing.json") as f:
+        expected = {"original": cox_meta["test_metrics"]["test_cindex"],
+                    "corrected": json.load(f)["test_cindex_correct_encoding"]}[encoding]
 
-    train_score = _cox_scores(train_df, cox)
-    test_score = _cox_scores(test_df, cox)
+    train_score = _cox_scores(train_df, cox, encoding)
+    test_score = _cox_scores(test_df, cox, encoding)
 
-    # Refuse to proceed unless the loaded model is the one whose test
-    # C-index was recorded at freeze time.
+    # Refuse to proceed unless the loaded model reproduces the test C-index
+    # recorded for this encoding.
     got = fast_concordance_index(test_df["event_time"].clip(lower=0.5).values, test_score,
                                  test_df["composite_event"].values.astype(int))
-    recorded = cox_meta["test_metrics"]["test_cindex"]
-    if abs(got - recorded) > 1e-9:
-        raise RuntimeError(f"frozen Cox gives test C-index {got}, metadata records {recorded}")
+    if abs(got - expected) > 1e-9:
+        raise RuntimeError(f"frozen Cox gives test C-index {got} under {encoding} encoding, expected {expected}")
 
     reference = RiskReference.from_scores(train_score, train_df["landmark_day"])
-    reference.save(models_dir / REFERENCE_FILENAME)
-    with open(models_dir / "cox_risk_reference_metadata.json", "w") as f:
-        json.dump({
-            "built_at_utc": datetime.now(timezone.utc).isoformat(),
-            "source_model": "cox_final.pkl",
-            "source_model_git_commit_hash": cox_meta["git_commit_hash"],
-            "dataset_version": cox_meta["dataset_version"],
-            "reference_period": "full train set (published < 2025-01-01)",
-            "score": "CoxPHFitter.predict_partial_hazard",
-            "percentile_definition": "#(reference scores <= x) / n_reference, per landmark_day",
-            "n_reference_rows": {str(lm): len(ref) for lm, ref in reference.sorted_scores.items()},
-        }, f, indent=2)
+    reference_path = models_dir / REFERENCE_FILENAME
+    if reference_path.exists():
+        # The committed reference is a frozen artifact: verify, never rewrite.
+        frozen = RiskReference.load(reference_path)
+        if frozen.sorted_scores.keys() != reference.sorted_scores.keys() or not all(
+                np.array_equal(frozen.sorted_scores[k], reference.sorted_scores[k]) for k in frozen.sorted_scores):
+            raise RuntimeError("training scores no longer match the frozen cox_risk_reference.npz")
+    else:
+        reference.save(reference_path)
+        with open(models_dir / "cox_risk_reference_metadata.json", "w") as f:
+            json.dump({
+                "built_at_utc": datetime.now(timezone.utc).isoformat(),
+                "source_model": "cox_final.pkl",
+                "source_model_git_commit_hash": cox_meta["git_commit_hash"],
+                "dataset_version": cox_meta["dataset_version"],
+                "reference_period": "full train set (published < 2025-01-01)",
+                "score": "CoxPHFitter.predict_partial_hazard",
+                "percentile_definition": "#(reference scores <= x) / n_reference, per landmark_day",
+                "n_reference_rows": {str(lm): len(ref) for lm, ref in reference.sorted_scores.items()},
+            }, f, indent=2)
 
     frames = []
     for split, df, score in [("train", train_df, train_score), ("test", test_df, test_score)]:
@@ -154,7 +173,7 @@ def main():
     out = pd.concat(frames, ignore_index=True)
     out_dir = cfg.project_root / "data" / "training"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "cox_risk_pct.parquet"
+    out_path = out_dir / OUTPUT_FILENAMES[encoding]
     out.to_parquet(out_path, index=False)
     log_with_fields(logger, logging.INFO, "cox_risk_pct written", path=str(out_path), rows=len(out))
 
@@ -171,4 +190,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--encoding", choices=["corrected", "original"], default="corrected",
+                        help="test-frame encoding; 'original' reproduces the pre-2026-10-21 numbers")
+    main(parser.parse_args().encoding)

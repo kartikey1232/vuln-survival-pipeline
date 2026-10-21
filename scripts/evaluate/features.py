@@ -59,6 +59,19 @@ def one_hot(df: pd.DataFrame, feature_cols: list[str], align_to: list[str] | Non
     return X
 
 
+def encode_against(df: pd.DataFrame, model_columns: list[str], *, encoding: str = "corrected") -> pd.DataFrame:
+    """Encode a non-training frame (test, a request) against a frozen
+    model's columns. encoding="original" is the path every number recorded
+    before 2026-10-21 was computed with (one_hot on `df` itself, then
+    aligned), kept so those numbers stay reproducible; "corrected" is
+    encode_for_model. See docs/results_corrected_encoding.md."""
+    if encoding == "original":
+        return one_hot(df, MODEL_FEATURE_COLUMNS).reindex(columns=model_columns, fill_value=0)
+    if encoding == "corrected":
+        return encode_for_model(df, model_columns)
+    raise ValueError(f"encoding must be 'original' or 'corrected', got {encoding!r}")
+
+
 def encode_for_model(df: pd.DataFrame, model_columns: list[str]) -> pd.DataFrame:
     """One-hot encode against a FROZEN model's column list, correct for any
     number of rows. `one_hot(df, ..., align_to=...)` is not: it drops the
@@ -67,9 +80,9 @@ def encode_for_model(df: pd.DataFrame, model_columns: list[str]) -> pd.DataFrame
     confidentiality/availability_impact HIGH vs COMPLETE,
     epss_model_version_at_asof v2023.03.01 vs unversioned) those rows are
     encoded as the training reference category, and a single row always
-    loses its own category. Kept unchanged because every recorded test
-    number was produced with it (see docs/STATUS.md, test-time encoding
-    addendum)."""
+    loses its own category. `one_hot` is kept unchanged: it is correct for
+    encoding the training frame itself, and every number recorded before
+    2026-10-21 was produced with it (encode_against(encoding="original"))."""
     cats = [c for c in CATEGORICAL if c in MODEL_FEATURE_COLUMNS]
     X = pd.get_dummies(df[MODEL_FEATURE_COLUMNS], columns=cats, drop_first=False)
     return X.reindex(columns=model_columns, fill_value=0).astype(float)

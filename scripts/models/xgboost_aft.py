@@ -28,7 +28,7 @@ from config.config_schema import get_config
 from scripts.common.logging_utils import get_logger, log_with_fields
 from scripts.evaluate.common import evaluate_model, evaluate_model_per_landmark
 from scripts.evaluate.data_splits import load_full_train_and_test, load_splits
-from scripts.evaluate.features import CATEGORICAL, impute_numeric, one_hot, prepare_raw
+from scripts.evaluate.features import CATEGORICAL, encode_for_model, impute_numeric, one_hot, prepare_raw
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 
 logger = get_logger(__name__, category="evaluate")
@@ -106,7 +106,7 @@ def main() -> None:
     fit_df, val_df = impute_numeric(fit_df, val_df)
 
     X_fit = one_hot(fit_df, MODEL_FEATURE_COLUMNS)
-    X_val = one_hot(val_df, MODEL_FEATURE_COLUMNS, align_to=list(X_fit.columns))
+    X_val = encode_for_model(val_df, list(X_fit.columns))
 
     fit_duration = fit_df["event_time"].values
     fit_event = fit_df["composite_event"].values.astype(bool)
@@ -158,7 +158,7 @@ def main() -> None:
     train_df, test_df = impute_numeric(train_df, test_df)
 
     X_train = one_hot(train_df, MODEL_FEATURE_COLUMNS)
-    X_test = one_hot(test_df, MODEL_FEATURE_COLUMNS, align_to=list(X_train.columns))
+    X_test = encode_for_model(test_df, list(X_train.columns))
 
     train_duration = train_df["event_time"].values
     train_event = train_df["composite_event"].values.astype(bool)

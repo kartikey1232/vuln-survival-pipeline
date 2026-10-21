@@ -19,7 +19,7 @@ from lifelines import CoxPHFitter
 from config.config_schema import get_config
 from scripts.evaluate.common import evaluate_model, evaluate_model_per_landmark
 from scripts.evaluate.data_splits import load_full_train_and_test
-from scripts.evaluate.features import impute_numeric, one_hot, prepare_raw
+from scripts.evaluate.features import encode_for_model, impute_numeric, one_hot, prepare_raw
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 
 
@@ -31,7 +31,7 @@ def main() -> None:
     train_df, test_df = impute_numeric(train_df, test_df)
 
     X_train = one_hot(train_df, MODEL_FEATURE_COLUMNS)
-    X_test = one_hot(test_df, MODEL_FEATURE_COLUMNS, align_to=list(X_train.columns))
+    X_test = encode_for_model(test_df, list(X_train.columns))
 
     X_train = X_train.copy()
     X_train["event_time"] = train_df["event_time"].clip(lower=0.5)

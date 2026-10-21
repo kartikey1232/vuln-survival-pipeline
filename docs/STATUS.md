@@ -305,44 +305,51 @@ period:
 2. Break the top-end tie (VeryHigh saturating at the validation 95th
    percentile flattens the top ~6% of test rows).
 
-## Addendum: test-time one-hot encoding bug (found 2026-10-21, NOT yet re-run)
+## Addendum: test-time one-hot encoding bug — corrected (2026-10-21)
 
-Found while building the API. `scripts/evaluate/features.py::one_hot(df,
-..., align_to=train_cols)` runs `get_dummies(drop_first=True)` on `df`
-BEFORE aligning. Where the test frame's first (alphabetical) category
-differs from train's, test rows in that category were encoded as the
-training reference category:
+`one_hot(df, ..., align_to=train_cols)` dropped `df`'s OWN first category
+before aligning. On test this encoded 84,684 rows' category as the
+training reference (`confidentiality_impact`/`availability_impact` HIGH,
+`epss_model_version_at_asof` v2023.03.01, `cvss_version` 3.0).
 
-- confidentiality_impact HIGH: 56,385 rows
-- availability_impact HIGH: 49,146 rows
-- epss_model_version_at_asof v2023.03.01: 22,967 rows
-- cvss_version 3.0: 3,947 rows
+All test evaluations were re-run with `encode_for_model`, nothing refit,
+same seed and resamples, and published as a new record:
+**`docs/results_corrected_encoding.md`**.
 
-84,684 test rows in all have a different Cox score. Fitting was unaffected,
-because train's own first category is the reference. Affected: every
-recorded TEST number (freeze_final_models, final_comparison,
-post_freeze_metrics, risk_percentile's test cox_risk_pct, and therefore the
-fuzzy evaluation). The fit/val tuning scripts use the same pattern on val
-frames and are probably affected too; not checked.
+- The original tables in `model_comparison.md` and `fuzzy_layer.md` are
+  kept and marked.
+- The metadata JSONs have `test_metrics_corrected_encoding` added
+  alongside the recorded `test_metrics`.
+- `encode_against(encoding="original")` still reproduces every original
+  number. Regression tests: `tests/test_evaluate/test_encoding.py`.
 
-Point estimates with correct encoding (same frozen models, nothing refit):
+Corrected headline:
 
-| Model | C-index frozen → correct | R@10% | Blind-spot @10% |
-|---|---|---|---|
-| Cox | 0.8492 → 0.8501 | 0.623 → 0.631 | 0.310 → 0.338 |
-| RSF | 0.8122 → 0.8121 | 0.575 → 0.582 | 0.352 → 0.379 |
-| XGBoost-AFT | 0.7853 → 0.7852 | 0.511 → 0.504 | 0.421 → 0.428 |
+- **Cox still leads**: C-index 0.850 (was 0.849), R@10% 0.631, AUC ≈ 0.85
+  at 30/90/180d.
+- RSF: 0.812. XGBoost-AFT: 0.785. **XGBoost-AFT vs EPSS is still
+  non-significant.**
+- **Fuzzy still doesn't beat the linear blend**, and loses to Cox by more:
+  recall@10% −9.7pp; blind-spot −0.131, CI now excludes zero.
+- The train/test `cox_risk_pct` shift was partly the bug: corrected test
+  medians are 0.32–0.38, not 0.25–0.33.
+- The trajectory ablations and RSF variance need refits and were not
+  re-run.
 
-The conclusions are unchanged: Cox is still best. The fuzzy-vs-Cox gap
-likely widens, since Cox's blind-spot rate goes up.
+**Limitations:**
 
-`encode_for_model` (same module) is the correct encoder. The API uses it.
-`one_hot` was left unchanged so that the recorded numbers still reproduce.
-**Open decision:** whether to switch the evaluation scripts to
-`encode_for_model` and re-run all test numbers (docs/model_comparison.md,
-docs/fuzzy_layer.md, models/*_metadata.json). This is not tuning, since no
-design choice changes. The frozen metadata would need a new, named record
-rather than an overwrite (models/README.md).
+- **RSF and XGBoost-AFT hyperparameters were selected on mis-encoded
+  validation inputs.** `epss_model_version_at_asof` was mis-encoded on all
+  53,674 validation rows: every row carried v2023.03.01 but was encoded as
+  the `unversioned` reference. The chosen configurations may be
+  suboptimal. They were not re-tuned, because test results are known and
+  re-tuning would be selection leakage.
+- **Cox has no fit/validation tuning step and is unaffected.**
+  `penalizer=0.1` was a fixed value from the untuned preliminary baseline
+  (`5233885`), set before the fit/val split existed. A sentence in
+  model_comparison.md claiming it was "chosen on C-index" was corrected.
+- **The fuzzy design is unaffected**: its validation `cox_risk_pct` came
+  from encoding the full training frame, which was correct.
 
 ## Addendum: API (2026-10-21)
 

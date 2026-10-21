@@ -27,6 +27,15 @@ C-index as approximate.
 The database already has a schema-only placeholder for model output —
 `training.prediction` — for a future serving/inference phase.
 
+## Corrected-encoding metrics
+
+Each `*_final_metadata.json` keeps its recorded `test_metrics` and has a
+`test_metrics_corrected_encoding` block added beside it (2026-10-21):
+the same frozen model, with the test frame encoded relative to the
+training categories. See `docs/results_corrected_encoding.md`.
+`cox_serving_preprocessing.json` holds the training imputation medians
+the API uses.
+
 ## Fuzzy-layer input reference
 
 - `cox_risk_reference.npz` / `cox_risk_reference_metadata.json` — frozen
