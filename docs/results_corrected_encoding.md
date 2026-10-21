@@ -245,13 +245,55 @@ bug.** Under correct encoding, the test medians of `cox_risk_pct` are
 but smaller; test is still below the training median of 0.5. Validation
 remains the right reference for the cut-offs.
 
+### Cox trajectory ablation, corrected
+
+The reduced-feature models have to be fit, so this one study refits three
+Cox models. That is not tuning: the feature sets are unchanged (the same 6
+trajectory features; all EPSS features), as are the penalizer (0.1),
+seed, and 200 paired resamples. Cox fits are deterministic, and
+`--encoding original` reproduces every recorded number and CI in
+`model_comparison.md` exactly.
+
+Script: `python -m scripts.evaluate.cox_trajectory_ablation [--encoding original]`.
+
+| Feature set | C-index | Recall@5% | Recall@10% |
+|---|---|---|---|
+| a) Full Cox | 0.8492 → **0.8501** | 0.4851 → **0.4963** | 0.6231 → **0.6306** |
+| b) Minus trajectory features | 0.8600 → **0.8556** | 0.5149 → **0.5112** | 0.5970 → **0.6157** |
+| c) Minus all EPSS features | 0.8379 → **0.8329** | 0.4179 → **0.4254** | 0.5709 → **0.5560** |
+
+Paired differences, original → **corrected** (95% CI; bold = excludes 0):
+
+| | ΔC-index | ΔRecall@1% | ΔRecall@5% | ΔRecall@10% |
+|---|---|---|---|---|
+| (a) − (b) | **−0.0107 (−0.0196, −0.0012)** → −0.0055 (−0.0147, +0.0049) | −0.011 → −0.019 (−0.071, +0.029) | −0.030 → −0.015 (−0.084, +0.035) | +0.026 → +0.015 (−0.027, +0.054) |
+| (a) − (c) | +0.0114 (−0.019, +0.040) → +0.0172 (−0.0103, +0.0441) | +0.011 → +0.022 (−0.060, +0.096) | +0.067 → +0.071 (−0.025, +0.162) | +0.052 (−0.024, +0.117) → **+0.075 (+0.008, +0.139)** |
+
+**Does the conclusion hold? Partly.**
+
+- **Direction: unchanged.** Removing the trajectory features still raises
+  Cox's C-index (point difference −0.0055). Full Cox is not better than
+  Cox without trajectory features on any metric with an interval excluding
+  zero. **There is still no evidence that EPSS trajectory features improve
+  Cox.**
+- **Significance: lost.** The interval for (a) − (b) now includes zero. The
+  original, stronger claim (that dropping trajectory features
+  *significantly improves* Cox's C-index, which `model_comparison.md` used
+  to rule out tree overfitting as the sole explanation) **does not hold
+  under corrected encoding**. The supported statement is now: no
+  significant difference; point estimate favours dropping them.
+- **New:** full Cox beats Cox-without-any-EPSS at recall@10% (+0.075,
+  interval excludes zero). EPSS level features (`epss_pct_now`, the model
+  version) carry signal at the top of the list, even though the trajectory
+  features don't add any.
+
 ### Not re-run
 
-These require refitting models, so they stay as originally computed, with
-the bug, in `docs/model_comparison.md`:
-
-- the XGBoost-AFT and Cox trajectory ablations;
-- RSF run-to-run variance.
+- **XGBoost-AFT trajectory ablation.** It needs refits, and wasn't
+  requested here. It stays as originally computed, with the bug, in
+  `docs/model_comparison.md`.
+- **RSF run-to-run variance.** Left as is: it supports no conclusion,
+  only the "treat RSF numbers as approximate" caveat.
 
 ## Conclusions re-checked
 
@@ -283,5 +325,6 @@ Neither conclusion flipped.
   validation), so it is unaffected.
 - The fuzzy layer's design is unaffected: its validation `cox_risk_pct`
   came from encoding the full training frame, which was correct.
-- The trajectory ablations and the RSF variance study were not re-run,
-  because they require refits.
+- The Cox trajectory ablation was re-run; dropping trajectory features
+  no longer improves C-index *significantly* (see above). The XGBoost-AFT
+  ablation and the RSF variance study were not re-run.

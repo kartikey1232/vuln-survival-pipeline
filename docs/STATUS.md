@@ -333,8 +333,16 @@ Corrected headline:
   recall@10% −9.7pp; blind-spot −0.131, CI now excludes zero.
 - The train/test `cox_risk_pct` shift was partly the bug: corrected test
   medians are 0.32–0.38, not 0.25–0.33.
-- The trajectory ablations and RSF variance need refits and were not
-  re-run.
+- **Cox trajectory ablation re-run** (refits reduced-feature Cox models
+  only; same feature sets, penalizer and seed):
+  - Removing trajectory features still raises C-index (0.8556 vs 0.8501),
+    but the paired interval now includes zero (−0.0055, CI −0.0147,
+    +0.0049; was −0.0107 excluding zero).
+  - Supported: no evidence trajectory features help Cox. No longer
+    supported: that removing them significantly helps.
+  - New: full Cox beats Cox-without-any-EPSS at recall@10% (+0.075, CI
+    excludes zero).
+- The XGBoost-AFT ablation and RSF variance were not re-run.
 
 **Limitations:**
 

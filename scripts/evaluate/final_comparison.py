@@ -30,7 +30,7 @@ from scripts.evaluate.common import (
     recall_at_budget,
 )
 from scripts.evaluate.data_splits import load_full_train_and_test
-from scripts.evaluate.features import encode_for_model, impute_numeric, one_hot, prepare_raw
+from scripts.evaluate.features import encode_against, encode_for_model, impute_numeric, one_hot, prepare_raw
 from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 from scripts.models.xgboost_aft import _fix_zero_durations, _to_dmatrix
 
@@ -87,9 +87,9 @@ def _fit_rsf(train_df, test_df, feature_cols, *, random_state=0):
     return rsf.predict(X_test)
 
 
-def _fit_cox(train_df, test_df, feature_cols):
+def _fit_cox(train_df, test_df, feature_cols, *, encoding="corrected"):
     X_train = one_hot(train_df, feature_cols)
-    X_test = encode_for_model(test_df, list(X_train.columns))
+    X_test = encode_against(test_df, list(X_train.columns), encoding=encoding)
     X_train = X_train.copy()
     X_train["event_time"] = train_df["event_time"].clip(lower=0.5)
     X_train["composite_event"] = train_df["composite_event"].astype(int)

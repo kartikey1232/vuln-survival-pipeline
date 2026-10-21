@@ -90,6 +90,16 @@ treat XGBoost-AFT's current tuning as final.
 
 ## Cox trajectory ablation (reporting only, same feature sets as above)
 
+> **Original encoding; the significance claim below does not hold under
+> the corrected encoding.** Re-run with corrected encoding (same feature
+> sets, penalizer, seed; see
+> [`results_corrected_encoding.md`](results_corrected_encoding.md#cox-trajectory-ablation-corrected)),
+> (a) − (b) ΔC-index is −0.0055 (95% CI −0.0147, +0.0049). The direction
+> is the same, but the interval now includes zero. So "dropping trajectory
+> features significantly improves Cox", and the inference drawn from it
+> below, is no longer supported. What remains supported is: no evidence
+> that trajectory features help Cox.
+
 | Feature set | C-index | Recall@5% | Recall@10% |
 |---|---|---|---|
 | a) Full Cox | 0.8492 | 0.4851 | 0.6231 |

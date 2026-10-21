@@ -5,7 +5,12 @@ features. C-index and recall at 5%/10%, with paired bootstrap CIs for
 (a)-(b) and (a)-(c), 200 resamples. Reuses the fit/feature-set helpers
 already defined in scripts/evaluate/final_comparison.py.
 
-Usage: python -m scripts.evaluate.cox_trajectory_ablation
+The reduced-feature models have to be fit, so this refits all three
+(penalizer 0.1, deterministic). The original run (docs/model_comparison.md)
+used the buggy test encoding (--encoding original reproduces it); the
+default is the corrected one (docs/results_corrected_encoding.md).
+
+Usage: python -m scripts.evaluate.cox_trajectory_ablation [--encoding original]
 """
 
 from __future__ import annotations
@@ -22,12 +27,12 @@ from scripts.features.build_landmark_dataset import MODEL_FEATURE_COLUMNS
 logger = get_logger(__name__, category="evaluate")
 
 
-def cox_trajectory_ablation(train_df, test_df):
-    full_score = _fit_cox(train_df, test_df, MODEL_FEATURE_COLUMNS)
+def cox_trajectory_ablation(train_df, test_df, encoding="corrected"):
+    full_score = _fit_cox(train_df, test_df, MODEL_FEATURE_COLUMNS, encoding=encoding)
     b_cols = [c for c in MODEL_FEATURE_COLUMNS if c not in TRAJECTORY_FEATURES]
-    b_score = _fit_cox(train_df, test_df, b_cols)
+    b_score = _fit_cox(train_df, test_df, b_cols, encoding=encoding)
     c_cols = [c for c in MODEL_FEATURE_COLUMNS if c not in EPSS_FEATURES]
-    c_score = _fit_cox(train_df, test_df, c_cols)
+    c_score = _fit_cox(train_df, test_df, c_cols, encoding=encoding)
 
     duration = test_df["event_time"].clip(lower=0.5).values
     event = test_df["composite_event"].values.astype(int)
@@ -45,17 +50,24 @@ def cox_trajectory_ablation(train_df, test_df):
     return results
 
 
-def main():
+def main(encoding="corrected"):
     cfg = get_config()
     train_df, test_df = _prep()
 
-    log_with_fields(logger, logging.INFO, "Cox trajectory ablation")
-    out = cox_trajectory_ablation(train_df, test_df)
+    log_with_fields(logger, logging.INFO, "Cox trajectory ablation", encoding=encoding)
+    out = cox_trajectory_ablation(train_df, test_df, encoding)
+    out["encoding"] = encoding
 
     print(json.dumps(out, indent=2, default=str))
-    with open(cfg.project_root / "scratch" / "cox_trajectory_ablation.json", "w") as f:
+    suffix = "" if encoding == "corrected" else "_original_encoding"
+    with open(cfg.project_root / "scratch" / f"cox_trajectory_ablation{suffix}.json", "w") as f:
         json.dump(out, f, indent=2, default=str)
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--encoding", choices=["corrected", "original"], default="corrected",
+                        help="test-frame encoding; 'original' reproduces the numbers in docs/model_comparison.md")
+    main(parser.parse_args().encoding)
