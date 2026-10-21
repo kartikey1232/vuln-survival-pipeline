@@ -1,0 +1,22 @@
+{
+  "source_model": "cox_final.pkl",
+  "source_model_git_commit_hash": "0456e46363f6de0dbdccb866569e61d34999bbca",
+  "dataset_version": "landmark_v20260922",
+  "numeric_medians_from": "full train set after prepare_raw (as scripts/evaluate/features.py::impute_numeric)",
+  "numeric_medians": {
+    "epss_pct_now": 0.18106,
+    "epss_pct_7d_ago": 0.11421,
+    "epss_pct_delta_7d": 0.00034,
+    "epss_pct_first": 0.12503,
+    "epss_pct_max_to_date": 0.18581,
+    "days_to_first_epss": 1.0,
+    "cvss_base_score": 6.5,
+    "cwe_kev_rate_expanding": 0.003692,
+    "cna_kev_rate_expanding": 0.00075,
+    "days_to_first_exploit": 0.0
+  },
+  "encoding": "scripts/evaluate/features.py::encode_for_model",
+  "verified_identical_to_fit_time_scores_on_train_rows": 268944,
+  "test_cindex_frozen_metadata": 0.8492200038389744,
+  "test_cindex_correct_encoding": 0.8500851640327036
+}

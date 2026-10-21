@@ -57,3 +57,19 @@ def one_hot(df: pd.DataFrame, feature_cols: list[str], align_to: list[str] | Non
     if align_to is not None:
         X = X.reindex(columns=align_to, fill_value=0)
     return X
+
+
+def encode_for_model(df: pd.DataFrame, model_columns: list[str]) -> pd.DataFrame:
+    """One-hot encode against a FROZEN model's column list, correct for any
+    number of rows. `one_hot(df, ..., align_to=...)` is not: it drops the
+    first category OF `df` before aligning, so when `df`'s first category
+    differs from the training frame's (on test: cvss_version 3.0 vs 2.0,
+    confidentiality/availability_impact HIGH vs COMPLETE,
+    epss_model_version_at_asof v2023.03.01 vs unversioned) those rows are
+    encoded as the training reference category, and a single row always
+    loses its own category. Kept unchanged because every recorded test
+    number was produced with it (see docs/STATUS.md, test-time encoding
+    addendum)."""
+    cats = [c for c in CATEGORICAL if c in MODEL_FEATURE_COLUMNS]
+    X = pd.get_dummies(df[MODEL_FEATURE_COLUMNS], columns=cats, drop_first=False)
+    return X.reindex(columns=model_columns, fill_value=0).astype(float)

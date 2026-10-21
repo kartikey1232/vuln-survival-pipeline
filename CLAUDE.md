@@ -76,6 +76,9 @@ to follow; STATUS.md is the longer narrative.
 - `scripts/models/{cox,rsf,xgboost_aft}.py` — the three candidate models
 - `scripts/eda/` — one-off exploratory/diagnostic scripts, not pipeline
   stages (not wired into `vsp`)
+- `api/` — read-only FastAPI service over the frozen artifacts (ranks by
+  Cox, explains by fuzzy rules; see `api/README.md`)
+- `scripts/fuzzy/` — Cox risk percentiles + the fuzzy explanation layer
 - `docs/STATUS.md` — full narrative status, read this first
 - `docs/model_comparison.md` — final model numbers
 - `docs/enrichment_leakage.md` — the leakage investigation writeup

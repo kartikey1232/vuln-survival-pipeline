@@ -304,3 +304,55 @@ period:
    `blindspot = 0` means agreement.
 2. Break the top-end tie (VeryHigh saturating at the validation 95th
    percentile flattens the top ~6% of test rows).
+
+## Addendum: test-time one-hot encoding bug (found 2026-10-21, NOT yet re-run)
+
+Found while building the API. `scripts/evaluate/features.py::one_hot(df,
+..., align_to=train_cols)` runs `get_dummies(drop_first=True)` on `df`
+BEFORE aligning. Where the test frame's first (alphabetical) category
+differs from train's, test rows in that category were encoded as the
+training reference category:
+
+- confidentiality_impact HIGH: 56,385 rows
+- availability_impact HIGH: 49,146 rows
+- epss_model_version_at_asof v2023.03.01: 22,967 rows
+- cvss_version 3.0: 3,947 rows
+
+84,684 test rows in all have a different Cox score. Fitting was unaffected,
+because train's own first category is the reference. Affected: every
+recorded TEST number (freeze_final_models, final_comparison,
+post_freeze_metrics, risk_percentile's test cox_risk_pct, and therefore the
+fuzzy evaluation). The fit/val tuning scripts use the same pattern on val
+frames and are probably affected too; not checked.
+
+Point estimates with correct encoding (same frozen models, nothing refit):
+
+| Model | C-index frozen → correct | R@10% | Blind-spot @10% |
+|---|---|---|---|
+| Cox | 0.8492 → 0.8501 | 0.623 → 0.631 | 0.310 → 0.338 |
+| RSF | 0.8122 → 0.8121 | 0.575 → 0.582 | 0.352 → 0.379 |
+| XGBoost-AFT | 0.7853 → 0.7852 | 0.511 → 0.504 | 0.421 → 0.428 |
+
+The conclusions are unchanged: Cox is still best. The fuzzy-vs-Cox gap
+likely widens, since Cox's blind-spot rate goes up.
+
+`encode_for_model` (same module) is the correct encoder. The API uses it.
+`one_hot` was left unchanged so that the recorded numbers still reproduce.
+**Open decision:** whether to switch the evaluation scripts to
+`encode_for_model` and re-run all test numbers (docs/model_comparison.md,
+docs/fuzzy_layer.md, models/*_metadata.json). This is not tuning, since no
+design choice changes. The frozen metadata would need a new, named record
+rather than an overwrite (models/README.md).
+
+## Addendum: API (2026-10-21)
+
+`api/` is a read-only FastAPI service (`uv run uvicorn api.main:app`),
+documented in `api/README.md`. It loads the frozen Cox model, the
+percentile reference, the fuzzy config and
+`models/cox_serving_preprocessing.json` (train imputation medians, from
+`scripts/models/export_serving_preprocessing.py`). It reads Postgres and
+never fits.
+
+`/watchlist` ranks by Cox, not fuzzy. Its pool reproduces the
+correctly-encoded Cox test C-index exactly (0.850085). Tests are in
+`tests/test_api/`, against the real test DB.
