@@ -464,3 +464,27 @@ the train-tuned RSF/XGBoost configs (limitation 2).
 
 **New shared-evaluation helpers** (`scripts/evaluate/common.py`):
 `evaluate_brier_at_horizon`, and `km_calibration_table(bin_score=...)`.
+
+## Addendum: rolling origin, lead time, budget equivalence (2026-10-22)
+
+No model, hyperparameter or design choice changed.
+
+- **`docs/rolling_origin.md`: a consistency check, not a competing
+  result.** Cox is refit under the frozen recipe at cutoffs 2024-01-01,
+  2024-07-01, 2025-01-01 and 2025-07-01, each tested on the next 6 months.
+  - Cox > EPSS on C-index and recall@10% in every fold.
+  - The 2025-01-01 refit reproduces the frozen model exactly.
+  - Rows come from an in-memory rebuild of the full grid:
+    `build(train_test_cutoff=STUDY_START)`, a new optional parameter with
+    the default unchanged.
+  - The rebuild is checked against `training_dataset` before use. The two
+    target encodings are stored as `NUMERIC(8,6)`, so the rebuild rounds
+    them to match.
+- **`docs/lead_time.md`: post-hoc and descriptive.** At a 10%
+  per-landmark budget, Cox and EPSS almost always flag shared CVEs at the
+  same landmark. Cox's lead comes from 19 blind spots it flags, a median
+  of 48 days before listing.
+- **Budget equivalence** (`final_results.md`): EPSS needs ~2.2× / 2.3× the
+  budget to match Cox's recall at 5% / 10%, both CIs excluding 1×. At 1% it
+  is 1.7×, with a CI that includes 1×.
+

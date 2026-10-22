@@ -22,7 +22,13 @@ test KEV events caught in the top k% of rows.
 `scratch/cox_trajectory_ablation.json`, `models/fuzzy_config.json` and the
 model metadata. The robustness numbers come from `scratch/sensitivity.json`,
 `scratch/stale_reruns.json` and `scratch/calibration_90d.json`, computed in
-`docs/robustness.md`.
+`docs/robustness.md`. Budget equivalence comes from
+`scratch/budget_equivalence.json` (`scripts/evaluate/budget_equivalence.py`).
+
+**Further analyses.** `docs/rolling_origin.md` is a rolling-origin
+consistency check over four disjoint 6-month windows. `docs/lead_time.md`
+is a post-hoc, descriptive lead-time analysis. Both are summarised under
+"Robustness" below; neither replaces a headline number.
 
 ## Population and volume
 
@@ -78,6 +84,25 @@ Neither excludes zero.
 
 **XGBoost-AFT vs EPSS is not significant on any metric.** Against raw
 EPSS its ΔC-index is +0.037 (-0.023, +0.106).
+
+### Budget equivalence (Cox vs EPSS-alone)
+
+The table answers one question: what alert budget does EPSS-alone need to
+match Cox's recall? It is read off the test recall-at-budget curves, pooled
+over landmarks, with the same top-k rule as recall@k. CIs come from the same
+200 whole-CVE resamples.
+
+| Cox budget | Cox recall | EPSS recall at same budget | EPSS budget needed to match Cox | Effort ratio (EPSS / Cox) |
+|---|---|---|---|---|
+| 1% | 0.231 (0.149–0.298) | 0.190 (0.130–0.251) | 1.7% (0.5–2.9%) | 1.7× (0.5–2.9×) |
+| 5% | 0.496 (0.398–0.591) | 0.369 (0.282–0.469) | 10.8% (6.3–14.6%) | **2.2× (1.3–2.9×)** |
+| 10% | 0.631 (0.529–0.718) | 0.459 (0.374–0.544) | 23.5% (17.6–37.4%) | **2.3× (1.8–3.7×)** |
+
+- **At 5% and 10%, EPSS-alone needs a bit over twice the triage effort to
+  reach Cox's recall.** Both intervals exclude 1×.
+- At 1% the ratio's interval includes 1×, matching the non-significant
+  ΔRecall@1%.
+- This is a computation on the existing curves, not new modelling.
 
 ### Per-landmark C-index
 
@@ -248,6 +273,30 @@ Read any RSF number as ≈0.81 ± 0.01.
 
 **Display calibration: evaluated and rejected** (see "Brier score and
 calibration" above).
+
+**Rolling-origin consistency check** (`docs/rolling_origin.md`). Cox was
+refit at each cutoff under the frozen recipe (no re-tuning) and tested on
+the next 6 months. The 2025-01-01 refit reproduces the frozen model exactly
+(C-index 0.850085 on the headline test).
+
+| Cutoff | Test events | Cox C-index | EPSS C-index | ΔC-index | ΔRecall@10% |
+|---|---|---|---|---|---|
+| 2024-01-01 | 97 | 0.857 | 0.706 | **+0.151 (+0.092, +0.227)** | **+0.196 (+0.081, +0.337)** |
+| 2024-07-01 | 125 | 0.804 | 0.621 | **+0.183 (+0.117, +0.260)** | **+0.160 (+0.071, +0.265)** |
+| 2025-01-01 | 126 | 0.863 | 0.764 | **+0.099 (+0.055, +0.154)** | **+0.167 (+0.068, +0.289)** |
+| 2025-07-01 | 103 | 0.858 | 0.750 | **+0.107 (+0.050, +0.177)** | **+0.146 (+0.021, +0.299)** |
+
+The headline remains the frozen 2025-01-01 model; these folds are a
+consistency check.
+
+**Lead time (post-hoc, descriptive; `docs/lead_time.md`).** Out of 108
+later-listed test CVEs, at a 10% per-landmark budget:
+
+- When both models flag a CVE, they almost always do so at the same
+  landmark (51 of 54).
+- Cox flags 19 CVEs that EPSS never does. All are blind spots, flagged a
+  median of 48 days (IQR 20–147.5) before listing.
+- EPSS flags 2 that Cox never does.
 
 ## Limitations
 
