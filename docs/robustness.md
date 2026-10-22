@@ -283,3 +283,24 @@ period.**
 - The figure keeps both recalibration curves next to the raw one, labelled
   as evaluated and rejected. The original
   `calibration_90d_corrected_encoding.png` is unchanged.
+
+## 4. Dashboard screenshots
+
+Captured from the running local API and dashboard (`api/` + `dashboard/`,
+unchanged by this pass) with headless Chrome, 1440 px wide at 2× device
+scale (2880 px images):
+
+- `docs/figures/dashboard_cve_lookup.png`: **CVE-2025-24472** (Fortinet
+  FortiOS/FortiProxy auth bypass, KEV-listed 2025-03-18, known ransomware
+  use). This is the clearest blind-spot example. Cox places it at the 92nd
+  / 89th / 88th training percentile at landmarks 7 / 14 / 30, while its
+  EPSS percentile sits at ~12% until the KEV listing.
+- `docs/figures/dashboard_watchlist.png`: the 10% budget, pooled, page 2
+  (Cox ranks 51–69 visible). Cox's top 50 contains no EPSS blind spots;
+  page 2 shows two highlighted "EPSS ranks low" rows (ranks 62 and 67) among
+  rows EPSS also ranks highly. Across the whole 10% budget, 4,982 of 17,876
+  selected rows (28%) are EPSS blind spots.
+- `docs/figures/dashboard_backtest.png`: the corrected-encoding backtest
+  view.
+
+The CVE view shows the raw Cox probability only, per section 3.
