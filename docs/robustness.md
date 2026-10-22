@@ -109,3 +109,72 @@ removes 39,800 rows and 43 events.
   this subset does *not* test is whether the presence gap inflates
   validation metrics relative to test. That caveat is about validation and
   stays as stated.
+
+## 2. Re-runs of the two stale analyses (corrected encoding)
+
+`python -m scripts.evaluate.stale_reruns` → `scratch/stale_reruns.json`.
+`final_comparison.py`'s fit helpers already encoded test with
+`encode_for_model` (since f457d0c). Only the recorded runs predated that.
+
+### a) XGBoost-AFT trajectory ablation
+
+These use the same feature sets as the Cox ablation: (b) drops the 6
+trajectory features and keeps `epss_pct_now`; (c) drops all EPSS
+features. XGBoost-AFT keeps its chosen config (not re-tuned). The
+reduced-feature models are refits; the full model reproduces the frozen
+model's corrected-encoding C-index exactly (0.785218).
+
+| Feature set | C-index | Recall@5% | Recall@10% |
+|---|---|---|---|
+| a) full model | 0.7852 | 0.425 | 0.504 |
+| b) minus trajectory | 0.8168 | 0.466 | 0.563 |
+| c) minus all EPSS | 0.8164 | 0.429 | 0.545 |
+
+| Paired | ΔC-index | ΔRecall@1% | ΔRecall@5% | ΔRecall@10% |
+|---|---|---|---|---|
+| (a) − (b) | -0.0316 (-0.0772, +0.0045) | -0.026 (-0.082, +0.047) | -0.041 (-0.100, +0.014) | **-0.060 (-0.114, -0.012)** |
+| (a) − (c) | -0.0312 (-0.0732, +0.0028) | +0.041 (-0.029, +0.147) | -0.004 (-0.058, +0.068) | -0.041 (-0.102, +0.030) |
+
+**This does not exactly match Cox's null result.**
+
+- **C-index agrees with Cox:** the (a) − (b) interval spans zero.
+- **Recall@10% does not agree:** the full XGBoost-AFT model is *worse*
+  than the trajectory-free one by 6.0 points, with an interval excluding
+  zero. This is essentially the original-encoding result (−0.0597).
+- **Under the corrected encoding, the original-encoding finding stands.**
+- **For H1 this changes nothing.** Neither model shows trajectory features
+  *improving* discrimination, so H1 stays rejected.
+- **Read the XGBoost-AFT finding narrowly.** It is evidence that adding
+  trajectory features to this tuned XGBoost-AFT configuration hurts its
+  top-10% ranking. It is not evidence that trajectory carries negative
+  signal in general. Three reasons:
+  - The configuration was tuned on mis-encoded validation inputs
+    (limitation 2), and with the full feature set.
+  - The reduced models reuse that configuration untuned.
+  - Dropping *all* EPSS features also scores higher than the full model on
+    C-index and recall@10% (not significant). That points to the full
+    configuration over-fitting EPSS-derived inputs rather than to
+    trajectory specifically.
+- XGBoost-AFT is not the ranking model, and its gain over EPSS is not
+  significant on any metric.
+
+### b) RSF run-to-run variance
+
+The chosen RSF config was refit 3 times, varying only `random_state`, with
+`n_jobs=-1`. Test C-index, corrected encoding:
+
+| random_state | Test C-index |
+|---|---|
+| 0 | 0.8121 |
+| 1 | 0.8098 |
+| 2 | 0.8204 |
+
+- **Spread 0.0106, std 0.0046, mean 0.8141.** The original-encoding study
+  reported a spread of 0.0062 and std of 0.0025, so the corrected spread
+  is wider.
+- Read any RSF number as **≈0.81 ± 0.01**. Differences between RSF and
+  another model smaller than about 0.01 C-index are within RSF's own seed
+  noise.
+- The `random_state=0` refit matched the frozen RSF's corrected-encoding
+  C-index exactly (0.812099) in this run. That is one match, not evidence
+  of reproducibility. Rule 8 in `CLAUDE.md` stands.
