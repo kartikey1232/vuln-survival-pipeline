@@ -383,6 +383,13 @@ time-dependent AUC gain at every horizon.
   and the mechanism (a threat-intel firm as CNA) is different enough from
   ordinary vendor PSIRTs to warrant a closer look before leaning on
   `cna_kev_rate_expanding` without caveat.
+
+  > **Tested since ([`robustness.md`](robustness.md) §1, corrected encoding).**
+  > The 46/3 figure is train only. On test, VulnCheck is the CNA for 2,564
+  > CVEs with 26 row-level events (~10% of test events). Excluding them
+  > widens the Cox − EPSS C-index gap from +0.100 to +0.108 and narrows the
+  > recall@10% gap from +0.172 to +0.132, with both intervals still
+  > excluding zero. VulnCheck is not inflating the result.
 - **RSF non-determinism**: despite `random_state=0`, sksurv's
   `RandomSurvivalForest` under `n_jobs=-1` picked a *different* winning
   hyperparameter configuration across two otherwise-identical tuning runs on

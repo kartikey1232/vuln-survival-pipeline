@@ -4,8 +4,8 @@ percentile (cox_risk_pct) against a TRAINING-period reference
 distribution, one reference per landmark (7/14/30).
 
 Why percentiles, not probabilities: frozen Cox's predicted P(KEV <= 90d)
-spans only 0.078%-0.184% across all test rows (see STATUS.md's post-freeze
-addendum), so there's no usable spread for fuzzy membership functions,
+spans only 0.078%-0.191% across all test rows (see docs/final_results.md,
+"Brier score and calibration"), so there's no usable spread for fuzzy membership functions,
 while the ranking itself is sound. EPSS's input is epss_pct_now, already a
 percentile, so both fuzzy inputs end up on the same [0, 1] footing.
 
