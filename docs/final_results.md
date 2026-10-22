@@ -5,10 +5,13 @@ Every number the report and deck need, in one place.
 **Encoding.** Every number here uses the **corrected test encoding**
 (`docs/results_corrected_encoding.md`): the same frozen models, the same
 seed (20260922) and the same 200 whole-CVE resamples, through
-`scripts/evaluate/common.py`. The one exception is the **RSF run-to-run
-variance study**, marked below, which used the original encoding and was
-not re-run. The original-encoding numbers stay in `docs/model_comparison.md`
-and `docs/fuzzy_layer.md`, marked as such.
+`scripts/evaluate/common.py`. The original-encoding numbers stay in
+`docs/model_comparison.md` and `docs/fuzzy_layer.md`, marked as such.
+
+**Robustness.** Sensitivity analyses, the corrected re-runs of the RSF
+variance study and the XGBoost-AFT trajectory ablation, and the
+display-calibration test are in **`docs/robustness.md`**. Their headline
+numbers are summarised below under "Robustness".
 
 **Notation.** 95% CIs are in parentheses. In paired-difference tables,
 **bold** means the interval excludes zero. "Recall@k%" is the share of all
@@ -16,9 +19,10 @@ test KEV events caught in the top k% of rows.
 
 **Generated from:**
 `scratch/results_corrected_encoding.json`, `scratch/fuzzy_evaluation.json`,
-`scratch/cox_trajectory_ablation.json`, `scratch/final_comparison_results.json`
-(RSF variance), `models/fuzzy_config.json` and the model metadata. This is
-formatting only; no new computation.
+`scratch/cox_trajectory_ablation.json`, `models/fuzzy_config.json` and the
+model metadata. The robustness numbers come from `scratch/sensitivity.json`,
+`scratch/stale_reruns.json` and `scratch/calibration_90d.json`, computed in
+`docs/robustness.md`.
 
 ## Population and volume
 
@@ -142,8 +146,13 @@ IPA is significantly above zero but tiny, because KEV listing is rare.
   0.078–0.191% across all test rows.
 - The top decile is under-predicted about 6×. Calibration-in-the-large is
   fine.
-- Use Cox for ordering, not as calibrated probabilities.
-- Figure: `docs/figures/calibration_90d_corrected_encoding.png`.
+- Use Cox for ordering, not as calibrated probabilities. **This is now a
+  tested finding.** Isotonic and Platt recalibrations fit on validation
+  both failed on test (isotonic IPA −0.42; Platt ≈ identity), so no
+  calibrated probability is shipped (`docs/robustness.md` §3).
+- Figures: `docs/figures/calibration_90d_corrected_encoding.png`, and
+  `docs/figures/calibration_90d_calibrated.png` (adds both rejected
+  recalibrations).
 
 ## Trajectory ablation (H1)
 
@@ -209,18 +218,36 @@ validation.
   11,886 test rows, so the top 1% and 5%
   are ordered by the tie-break.
 
-## Not corrected: RSF run-to-run variance (original encoding)
+## Robustness (`docs/robustness.md`)
 
-**Original test encoding; not re-run.** It supports no conclusion, only
-the caveat that RSF numbers are approximate. The same RSF config was
+**Sensitivity of Cox vs EPSS-alone on test** (frozen Cox, same seed and
+resamples). No subset flips the conclusion:
+
+| Subset | Rows / events | Cox C-index | ΔC-index vs EPSS | ΔRecall@10% vs EPSS | Cox blind-spot catch @10% |
+|---|---|---|---|---|---|
+| Baseline | 178,756 / 268 | 0.850 | **+0.100 (+0.069, +0.139)** | **+0.172 (+0.095, +0.236)** | 0.338 |
+| + version-transition rows | 185,511 / 284 | 0.852 | **+0.097 (+0.065, +0.137)** | **+0.180 (+0.107, +0.262)** | 0.351 |
+| − VulnCheck-CNA CVEs | 171,071 / 242 | 0.844 | **+0.108 (+0.071, +0.149)** | **+0.132 (+0.060, +0.199)** | 0.297 |
+| CNA CVSS present only | 138,956 / 225 | 0.872 | **+0.094 (+0.062, +0.133)** | **+0.178 (+0.100, +0.254)** | 0.391 |
+
+**RSF run-to-run variance (corrected encoding).** The same RSF config was
 refit with 3 seeds:
-random_state 0: 0.8122 | random_state 1: 0.8150 | random_state 2: 0.8184
+random_state 0: 0.8121 | random_state 1: 0.8098 | random_state 2: 0.8204.
+Spread 0.0106, std 0.0046 (the original encoding gave 0.0062 / 0.0025).
+Read any RSF number as ≈0.81 ± 0.01.
 
-Spread 0.0062, std 0.0025. Read any RSF number as
-≈0.81 ± 0.01.
+**XGBoost-AFT trajectory ablation (corrected encoding).**
 
-The XGBoost-AFT trajectory ablation is also original-encoding only and is
-not cited (see Limitations).
+- (a) − (b) ΔC-index is −0.032 (−0.077, +0.005), spanning zero, as with
+  Cox.
+- ΔRecall@10% is **−0.060 (−0.114, −0.012)**: the full model is *worse*
+  than the trajectory-free one, the same as under the original encoding.
+- Neither model shows trajectory features helping, so H1 stays rejected.
+- The XGBoost-AFT result is specific to its config, which was tuned for the
+  full feature set and reused untuned for the reduced ones.
+
+**Display calibration: evaluated and rejected** (see "Brier score and
+calibration" above).
 
 ## Limitations
 
@@ -240,7 +267,9 @@ not cited (see Limitations).
    Cox is unaffected by limitation 2.
 4. **Cox probabilities are badly under-dispersed** (top decile
    under-predicted about 6×). Cox is used for ranking only; the survival
-   curves are not calibrated risk.
+   curves are not calibrated risk. *Tested:* validation-fitted isotonic and
+   Platt recalibrations do not transfer to test, so this cannot be fixed by
+   a post-hoc monotone map on this data (`docs/robustness.md` §3).
 5. **Fuzzy top-end tie.** VeryHigh saturates at the validation 95th
    percentile, which ties about 6–7% of test rows at one score. The top
    1–5% is therefore ordered by the tie-break (`cox_risk_pct`), not by the
@@ -258,19 +287,34 @@ not cited (see Limitations).
    distribution.
 10. **There is a train vs test percentile shift.** Test `cox_risk_pct`
     medians are 0.32–0.38 against 0.5 on train. It is smaller than first
-    reported, which was partly the encoding bug.
+    reported, which was partly the encoding bug. *Tested consequence:* the
+    shift (together with Cox being in-sample on validation) is large enough
+    to break calibration transfer from validation to test, not only to
+    move percentiles (`docs/robustness.md` §3).
 11. **Residual enrichment bias.** Even after the own-CNA source rule,
     CVSS presence still differs between positives and negatives (2.8pp
     train / 6.2pp test). Validation C-index runs optimistic relative to
-    test. `disclosure@vulncheck.com`, a threat-intel vendor acting as CNA,
-    is an unresolved small-n case (46 CVEs).
-12. **Not re-run with the corrected encoding:** the XGBoost-AFT trajectory
-    ablation (not cited as evidence) and the RSF run-to-run variance study.
+    test. *Tested:* restricting test to rows with a CNA CVSS score leaves
+    Cox's advantage over EPSS intact (ΔC-index +0.094, ΔR@10% +0.178, both
+    excluding zero), so CVSS presence is not what drives it. The validation
+    optimism caveat stands. `disclosure@vulncheck.com`, a threat-intel
+    vendor acting as CNA, is 46 CVEs in train but **2,564 CVEs (26 row-level
+    events) on test**. *Tested:* excluding them leaves Cox's advantage intact
+    (`docs/robustness.md` §1).
+12. **Resolved: both stale analyses were re-run with the corrected
+    encoding** (`docs/robustness.md` §2). The XGBoost-AFT ablation agrees
+    with Cox on C-index. At recall@10% the full model is significantly
+    worse than the trajectory-free one, which still gives no support for
+    H1.
 13. **RSF is not run-to-run reproducible** under `n_jobs=-1`: test C-index
-    spread is 0.0062 across seeds.
-14. **The original test encoding was wrong for 84,684 test rows.** Every
+    spread is 0.0106 across 3 seeds (corrected encoding).
+14. **Version-transition rows.** The default export drops rows whose
+    window spans an EPSS model release. *Tested:* adding back the 6,755 test
+    rows (16 events) leaves every conclusion unchanged
+    (`docs/robustness.md` §1).
+15. **The original test encoding was wrong for 84,684 test rows.** Every
     number above uses the corrected encoding (`encode_for_model`). The
     original path is kept only to reproduce the old numbers.
-15. **Small event counts.** There are 268 test events and 55 validation
+16. **Small event counts.** There are 268 test events and 55 validation
     events. Recall CIs are wide (about ±0.1), and differences of a few
     points between models are mostly within noise.

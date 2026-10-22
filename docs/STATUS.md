@@ -199,6 +199,8 @@ re-run with the corrected encoding): under the original encoding the
 corrected encoding is unknown. The config was also tuned on mis-encoded
 validation inputs, so this is not cited as evidence about trajectory
 features. H1's evidence is the corrected Cox ablation (see Hypotheses).
+*[Resolved 2026-10-22: re-run with the corrected encoding; see the
+robustness addendum below.]*
 
 ## Known limitations / open items at handoff
 
@@ -218,7 +220,9 @@ features. H1's evidence is the corrected Cox ablation (see Hypotheses).
 - **RSF is not run-to-run reproducible** despite `random_state=0` (both
   its tuning-time config selection AND its test C-index vary run to run
   under `n_jobs=-1` — spread 0.0062 across 3 seeds at a fixed config).
-  Treat any single RSF number as approximate.
+  Treat any single RSF number as approximate. *[Corrected-encoding
+  re-run 2026-10-22: spread 0.0106, std 0.0046; see the robustness
+  addendum.]*
 - `cwe_relationship.relationship_type` CHECK constraint was widened
   (CanPrecede/CanAlsoBe/Requires/StartsWith) but the relationship GRAPH
   itself is not used by any feature — data completeness only.
@@ -226,6 +230,9 @@ features. H1's evidence is the corrected Cox ablation (see Hypotheses).
   flagged in `docs/model_comparison.md`'s limitations as a CNA whose
   CVSS/CWE contributions might correlate with "already known interesting"
   even though it isn't CISA — small n (46 CVEs), not resolved further.
+  *[Tested 2026-10-22: 46 CVEs is train only; on test it is 2,564 CVEs /
+  26 events, and excluding them leaves Cox > EPSS intact. See the
+  robustness addendum.]*
 - No feature-engineering/model work happens on `scripts/epss_reconstruct/`,
   `scripts/labels/`, `scripts/export/` — those are still stub packages
   from the original pipeline design; the landmark build script bypassed
@@ -372,7 +379,8 @@ Corrected headline:
   - Companion finding: full Cox beats Cox-without-any-EPSS at recall@10%
     (+0.075, CI excludes zero). EPSS's current level carries real signal;
     its trajectory adds nothing measurable on top.
-- The XGBoost-AFT ablation and RSF variance were not re-run.
+- The XGBoost-AFT ablation and RSF variance were not re-run. *[Resolved:
+  re-run 2026-10-22, see the robustness addendum.]*
 
 **Limitations:**
 
@@ -401,3 +409,58 @@ never fits.
 `/watchlist` ranks by Cox, not fuzzy. Its pool reproduces the
 correctly-encoded Cox test C-index exactly (0.850085). Tests are in
 `tests/test_api/`, against the real test DB.
+
+## Addendum: robustness pass (2026-10-22)
+
+Sensitivity analyses and recomputations only. No design choice,
+hyperparameter or frozen model changed. Full record: **`docs/robustness.md`**;
+headline numbers are in `docs/final_results.md` ("Robustness").
+Scripts: `scripts/evaluate/{sensitivity,stale_reruns,calibration}.py`.
+
+**Limitations that are now tested, not merely stated:**
+
+- **Version-transition rows** (flagged, dropped from the default export).
+  Re-adding the 6,755 test rows (16 events) leaves Cox > EPSS intact. The
+  rows are rebuilt from the same build's feature/label tables, and the
+  rebuild is checked to reproduce `training_dataset` exactly on the
+  unflagged rows.
+- **VulnCheck as CNA.** The "46 CVEs" in earlier docs is the training
+  population. On test it is 2,564 CVEs / 26 row-level events (~10% of test
+  events). Excluding them leaves Cox > EPSS intact.
+- **Residual CVSS-presence gap** (2.8pp train / 6.2pp test). Restricting
+  test to CNA-CVSS-present rows leaves Cox > EPSS intact (ΔC-index +0.094,
+  ΔR@10% +0.178). So CVSS presence does not drive the test result. The
+  separate caveat that validation runs optimistic relative to test is
+  untested and stands.
+- **Cox under-dispersion / "rank, don't read the probability".**
+  Validation-fitted isotonic and Platt maps (IPCW for validation's
+  2025-01-01 censoring) were each evaluated once on test.
+  - Isotonic (the validation CV rule's pick): IPA −0.42, about 3.2×
+    over-prediction.
+  - Platt: effectively the identity.
+  - **Not shipped (decision by the user).** Choosing between them on test
+    would be selection leakage. The API and dashboard keep the raw
+    probability with the existing note.
+  - Recorded cause: validation → test shift, mixed with Cox being
+    in-sample on validation; the data cannot separate the two. The shift
+    breaks calibration transfer, not only percentiles.
+  - Also found: isotonic ties 121,454 distinct scores into 345 values,
+    which would cost 0.014 C-index if ranked by. "Monotone ⇒ ranking
+    unchanged" holds only for strictly monotone maps.
+- **The two stale original-encoding analyses**, re-run with the corrected
+  encoding:
+  - RSF seed spread: 0.0106, std 0.0046.
+  - XGBoost-AFT trajectory ablation: the C-index is null like Cox's. At
+    recall@10% the full model is significantly *worse* than the
+    trajectory-free one (−0.060), matching the original-encoding number.
+  - H1 stays rejected.
+
+**Still stated, not tested:** validation optimism from the residual
+enrichment gap, the in-sample-validation issue for Cox (limitation 1), and
+the train-tuned RSF/XGBoost configs (limitation 2).
+
+**Dashboard screenshots:** `docs/figures/dashboard_{cve_lookup,watchlist,backtest}.png`
+(CVE-2025-24472 for the lookup view).
+
+**New shared-evaluation helpers** (`scripts/evaluate/common.py`):
+`evaluate_brier_at_horizon`, and `km_calibration_table(bin_score=...)`.

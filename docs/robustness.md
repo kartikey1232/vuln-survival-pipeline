@@ -6,6 +6,18 @@ encoding (`encode_for_model`), train-median imputation, seed 20260922 and
 200 whole-CVE resamples, through `scripts/evaluate/common.py`. This is a new
 record; nothing earlier is overwritten.
 
+## Summary
+
+| # | Check | Outcome |
+|---|---|---|
+| 1a | Re-add the 6,755 version-transition test rows (16 events) | Cox > EPSS holds (ΔC +0.097, ΔR@10% +0.180, both CIs exclude 0) |
+| 1b | Exclude VulnCheck-CNA CVEs (2,564 test CVEs, 26 events; *not* 46/3, which is train) | Holds (ΔC +0.108, ΔR@10% +0.132) |
+| 1c | CNA CVSS present only (138,956 rows, 225 events) | Holds (ΔC +0.094, ΔR@10% +0.178): CVSS presence doesn't drive the result |
+| 2a | XGBoost-AFT trajectory ablation, corrected | C-index null like Cox. At R@10% the full model is *worse* (−0.060, CI excludes 0). H1 stays rejected |
+| 2b | RSF seed variance, corrected | Spread 0.0106, std 0.0046 (wider than 0.0062) |
+| 3 | Display calibration (isotonic / Platt, fit on validation) | **Rejected:** isotonic IPA −0.42, Platt ≈ identity. Nothing shipped; Cox is for ranking only, now a tested finding |
+| 4 | Dashboard screenshots | `docs/figures/dashboard_{cve_lookup,watchlist,backtest}.png` |
+
 **Notation.** 95% CIs are in parentheses. In paired-difference tables,
 **bold** means the interval excludes zero. "Recall@k%" is the share of a
 subset's KEV events caught in the top k% of that subset's rows. EPSS-alone
