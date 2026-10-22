@@ -178,3 +178,108 @@ The chosen RSF config was refit 3 times, varying only `random_state`, with
 - The `random_state=0` refit matched the frozen RSF's corrected-encoding
   C-index exactly (0.812099) in this run. That is one match, not evidence
   of reproducibility. Rule 8 in `CLAUDE.md` stands.
+
+## 3. Display calibration: evaluated and rejected (tested negative result)
+
+`python -m scripts.evaluate.calibration` → `scratch/calibration_90d.json`,
+`docs/figures/calibration_90d_calibrated.png`.
+
+**Outcome: no calibrated probability is shipped.** The API and dashboard
+show the raw Cox probability only, with the existing under-dispersion
+note. This is a tested result, not a skipped step. Both calibrators were
+fit on validation only and evaluated once on test, and both failed. The
+choice was not between variants on test; that would be selection leakage.
+It was whether to ship a component whose evaluation failed.
+
+### What was fit
+
+The input is frozen Cox's P(KEV within 90 days) = 1 − S(90 | x). This is
+strictly increasing in the partial hazard, so it ranks identically.
+
+- **Fit on validation only:** train CVEs published 2024-07-01..2024-12-31,
+  53,674 rows / 18,973 CVEs, 55 events, 51 of them within 90 days.
+- **IPCW weights:** validation labels are censored at 2025-01-01, so
+  31,573 rows have under 90 days of follow-up and no event. The target
+  "listed within 90 days" is therefore fit with censoring weights from
+  validation's censoring Kaplan-Meier.
+- **Two calibrators:** isotonic regression, and Platt (logistic on
+  logit p).
+- **Validation-only selection rule, stated before test:** isotonic unless
+  Platt has the lower IPCW Brier@90d under 5-fold CVE-grouped
+  cross-validation. Results (×10⁻³): raw 1.1760, isotonic 1.1404, Platt
+  1.1760. **The rule picked isotonic.**
+
+### Test results (200 whole-CVE resamples, same seed)
+
+| | Brier@90d | IPA vs training KM | Range of P(KEV ≤90d) on test | Calibration-in-the-large (pred/obs) |
+|---|---|---|---|---|
+| Raw Cox | 0.001037 (0.000815–0.001265) | 0.00035 (0.00028–0.00042) | 0.078–0.191% | 0.93 |
+| Isotonic (validation rule's pick) | 0.001476 (0.001253–0.001699) | **−0.423 (−0.562, −0.322)** | 0.000–25.7% | 3.23 |
+| Platt | 0.001037 (0.000815–0.001265) | 0.00035 (0.00019–0.00046) | 0.097–0.228% | 1.16 |
+
+90-day calibration per decile of **raw** Cox risk (the same rows in every
+column; observed = test Kaplan-Meier):
+
+| Decile | Events by 90d | Observed | Raw pred (ratio) | Isotonic pred (ratio) | Platt pred (ratio) |
+|---|---|---|---|---|---|
+| 1 | 1 | 0.006% (0.000–0.017%) | 0.083% (14.79) | 0.000% (0.00) | 0.103% (18.41) |
+| 2 | 2 | 0.011% (0.000–0.034%) | 0.085% (7.61) | 0.000% (0.00) | 0.106% (9.46) |
+| 3 | 1 | 0.006% (0.000–0.017%) | 0.087% (15.55) | 0.000% (0.00) | 0.108% (19.31) |
+| 4 | 1 | 0.006% (0.000–0.017%) | 0.088% (15.78) | 0.001% (0.14) | 0.110% (19.58) |
+| 5 | 13 | 0.073% (0.022–0.134%) | 0.090% (1.23) | 0.027% (0.37) | 0.111% (1.53) |
+| 6 | 4 | 0.022% (0.000–0.057%) | 0.091% (4.06) | 0.027% (1.20) | 0.113% (5.04) |
+| 7 | 9 | 0.050% (0.011–0.106%) | 0.093% (1.85) | 0.027% (0.53) | 0.115% (2.28) |
+| 8 | 19 | 0.106% (0.039–0.179%) | 0.096% (0.90) | 0.034% (0.32) | 0.118% (1.11) |
+| 9 | 14 | 0.078% (0.034–0.142%) | 0.101% (1.28) | 0.319% (4.07) | 0.124% (1.58) |
+| 10 | 113 | 0.632% (0.465–0.809%) | 0.112% (0.18) | 2.767% (4.38) | 0.137% (0.22) |
+| all | 177 | 0.099% (0.078–0.121%) | 0.093% (0.93) | 0.320% (3.23) | 0.115% (1.16) |
+
+- **Isotonic over-predicts.** It is about 3.2× too high overall and puts
+  the top decile at about 2.8% against 0.63% observed. It also predicts
+  exactly 0 for the bottom ~40% of rows. Its top step (25.7%) was learned
+  from 62 validation rows, 10 of which had events. On test it is worse than
+  the covariate-free base rate.
+- **Platt is effectively the identity** (slope 0.95 on the logit scale).
+  IPA is unchanged and the predictions stay under-dispersed (0.10–0.23%).
+  Calibration-in-the-large gets slightly worse (1.16 vs 0.93).
+
+### Ranking invariance check
+
+| Score ranked by | C-index | Recall@10% | Distinct values on test |
+|---|---|---|---|
+| Cox partial hazard (the ranking) | 0.8501 (0.810–0.887) | 0.631 (0.529–0.718) | 121,454 |
+| Raw P(KEV ≤90d) | 0.8501 (0.810–0.887) | 0.631 (0.529–0.718) | 121,454 |
+| Platt | 0.8501 (0.810–0.887) | 0.631 (0.529–0.718) | 121,454 |
+| Isotonic | 0.8359 (0.795–0.869) | 0.586 (0.495–0.687) | 345 |
+
+- **Strictly increasing maps leave ranking unchanged.** Raw P(KEV ≤90d)
+  and Platt give identical C-index and recall to the partial hazard.
+- **Isotonic is not strictly increasing.** It is a step function that
+  collapses 121,454 distinct scores into 345 values, and the resulting ties
+  cost 0.014 C-index and 4.5 points of recall@10%. "A monotone transform
+  cannot alter the ranking" is true only for *strictly* monotone
+  transforms. A tie-producing calibrator could only ever be displayed, never
+  ranked by.
+
+### Conclusion
+
+**A validation-fitted monotone recalibration does not transfer to the test
+period.**
+
+- This ties to the train → test distribution shift (limitation 10): the
+  shift is large enough to break calibration transfer, not only to move
+  percentiles.
+- Two effects are mixed here, and these data cannot separate them:
+  1. **Period shift.** The base rate shifts between validation and test,
+     though only modestly in the large (90-day KM 0.118% vs 0.099%).
+  2. **In-sample fit.** Validation is in-sample for the frozen Cox model
+     (limitation 1), so its top-end separation on validation is sharper
+     than it is out of sample. This is what the isotonic top step
+     captured.
+- Either way, the under-dispersion is **not correctable by a post-hoc
+  transformation fitted on this data's validation period**. "Use Cox for
+  ranking, not as calibrated probabilities" is now a tested finding, not
+  only a design decision.
+- The figure keeps both recalibration curves next to the raw one, labelled
+  as evaluated and rejected. The original
+  `calibration_90d_corrected_encoding.png` is unchanged.

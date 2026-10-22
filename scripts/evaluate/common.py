@@ -539,6 +539,47 @@ def evaluate_brier(
     return {name: _summarize(point[j], samples[:, j]) for j, name in enumerate(names)}
 
 
+def evaluate_brier_at_horizon(
+    test_df: pd.DataFrame,
+    event_prob: np.ndarray,
+    horizon: float,
+    *,
+    survival_train: np.ndarray,
+    reference_event_prob: float,
+    label: str,
+    cve_id_col: str = "cve_id",
+    duration_col: str = "event_time",
+    event_col: str = "composite_event",
+    n_resamples: int = 200,
+    seed: int = DEFAULT_SEED,
+    log_every: int = 20,
+) -> dict[str, BootstrapResult]:
+    """IPCW Brier score and IPA at ONE horizon, for a prediction that only
+    exists at that horizon (e.g. a recalibrated P(event by `horizon`), which
+    has no survival curve to integrate). `event_prob` is P(event by
+    `horizon`) per row; `reference_event_prob` is the covariate-free
+    prediction given to every row. Same statistic as evaluate_brier's
+    brier_{h}d / ipa_{h}d, on the same resamples."""
+    from sksurv.metrics import brier_score
+
+    cve_ids, duration, event = _test_arrays(test_df, cve_id_col, duration_col, event_col)
+    check_ipcw_horizons(survival_train["time"], duration, (horizon,))
+    y_test = survival_array(duration, event)
+    surv = 1.0 - np.asarray(event_prob, dtype=float)
+
+    def stats(idx):
+        bs = brier_score(survival_train, y_test[idx], surv[idx, None], [horizon])[1][0]
+        bs_ref = brier_score(survival_train, y_test[idx], np.full((len(idx), 1), 1.0 - reference_event_prob),
+                             [horizon])[1][0]
+        return np.array([bs, bs_ref, 1 - bs / bs_ref])
+
+    point = stats(np.arange(len(test_df)))
+    samples = _bootstrap_rows(cve_ids, stats, 3, n_resamples=n_resamples, seed=seed,
+                              log_every=log_every, log_label=f"{label} Brier@{horizon:g}")
+    return {name: _summarize(point[j], samples[:, j])
+            for j, name in enumerate(("brier", "brier_reference", "ipa"))}
+
+
 def km_event_probability(duration: np.ndarray, event: np.ndarray, horizon: float) -> float:
     """1 - S_KM(horizon): Kaplan-Meier-estimated probability of the event by
     `horizon`, accounting for censoring (a raw event fraction would
@@ -557,6 +598,7 @@ def km_calibration_table(
     *,
     label: str,
     n_bins: int = 10,
+    bin_score: np.ndarray | None = None,
     cve_id_col: str = "cve_id",
     duration_col: str = "event_time",
     event_col: str = "composite_event",
@@ -571,10 +613,15 @@ def km_calibration_table(
     the same CVE-clustered bootstrap as every other metric here (a per-bin
     Greenwood CI would treat a CVE's landmark rows as independent). The
     last row, bin "all", is calibration-in-the-large over every row.
-    `ratio` = mean_predicted / observed (>1: over-predicts risk)."""
+    `ratio` = mean_predicted / observed (>1: over-predicts risk).
+
+    `bin_score`, if given, assigns the bins instead of the prediction —
+    e.g. the uncalibrated score, so a recalibrated prediction (which may
+    tie rows the raw score orders) is tabulated on the same bins."""
     cve_ids, duration, event = _test_arrays(test_df, cve_id_col, duration_col, event_col)
     p = np.asarray(predicted_event_prob, dtype=float)
-    bins = pd.qcut(pd.Series(p).rank(method="first"), n_bins, labels=False).to_numpy()
+    ranked_by = p if bin_score is None else np.asarray(bin_score, dtype=float)
+    bins = pd.qcut(pd.Series(ranked_by).rank(method="first"), n_bins, labels=False).to_numpy()
 
     def observed(idx):
         d, e, b = duration[idx], event[idx], bins[idx]
