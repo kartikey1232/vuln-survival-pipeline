@@ -22,13 +22,15 @@ test KEV events caught in the top k% of rows.
 `scratch/cox_trajectory_ablation.json`, `models/fuzzy_config.json` and the
 model metadata. The robustness numbers come from `scratch/sensitivity.json`,
 `scratch/stale_reruns.json` and `scratch/calibration_90d.json`, computed in
-`docs/robustness.md`. Budget equivalence comes from
-`scratch/budget_equivalence.json` (`scripts/evaluate/budget_equivalence.py`).
+`docs/robustness.md`. Budget equivalence, rolling origin and lead time come
+from `scratch/budget_equivalence.json`, `scratch/rolling_origin.json` and
+`scratch/lead_time.json` (`scripts/evaluate/{budget_equivalence,rolling_origin,lead_time}.py`).
 
-**Further analyses.** `docs/rolling_origin.md` is a rolling-origin
-consistency check over four disjoint 6-month windows. `docs/lead_time.md`
-is a post-hoc, descriptive lead-time analysis. Both are summarised under
-"Robustness" below; neither replaces a headline number.
+**This file is the single authoritative source for numbers.**
+`docs/robustness.md`, `docs/rolling_origin.md` and `docs/lead_time.md`
+hold the methods and fuller tables. Every number the report needs from them
+is reproduced here, in the "Budget equivalence", "Rolling-origin
+consistency check", "Lead time" and "Robustness" sections.
 
 ## Population and volume
 
@@ -85,7 +87,15 @@ Neither excludes zero.
 **XGBoost-AFT vs EPSS is not significant on any metric.** Against raw
 EPSS its ΔC-index is +0.037 (-0.023, +0.106).
 
-### Budget equivalence (Cox vs EPSS-alone)
+### Per-landmark C-index
+
+| Landmark | Cox | RSF | XGBoost-AFT | EPSS-alone |
+|---|---|---|---|---|
+| day 7 | 0.857 (0.822–0.890) | 0.813 (0.763–0.854) | 0.761 (0.702–0.808) | 0.761 (0.705–0.803) |
+| day 14 | 0.858 (0.811–0.897) | 0.815 (0.756–0.862) | 0.786 (0.727–0.842) | 0.766 (0.697–0.819) |
+| day 30 | 0.831 (0.782–0.883) | 0.805 (0.749–0.860) | 0.838 (0.786–0.884) | 0.714 (0.634–0.796) |
+
+## Budget equivalence (Cox vs EPSS-alone)
 
 The table answers one question: what alert budget does EPSS-alone need to
 match Cox's recall? It is read off the test recall-at-budget curves, pooled
@@ -103,14 +113,6 @@ over landmarks, with the same top-k rule as recall@k. CIs come from the same
 - At 1% the ratio's interval includes 1×, matching the non-significant
   ΔRecall@1%.
 - This is a computation on the existing curves, not new modelling.
-
-### Per-landmark C-index
-
-| Landmark | Cox | RSF | XGBoost-AFT | EPSS-alone |
-|---|---|---|---|---|
-| day 7 | 0.857 (0.822–0.890) | 0.813 (0.763–0.854) | 0.761 (0.702–0.808) | 0.761 (0.705–0.803) |
-| day 14 | 0.858 (0.811–0.897) | 0.815 (0.756–0.862) | 0.786 (0.727–0.842) | 0.766 (0.697–0.819) |
-| day 30 | 0.831 (0.782–0.883) | 0.805 (0.749–0.860) | 0.838 (0.786–0.884) | 0.714 (0.634–0.796) |
 
 ## Time-dependent AUC (cumulative/dynamic; censoring weights from train)
 
@@ -243,6 +245,85 @@ validation.
   11,886 test rows, so the top 1% and 5%
   are ordered by the tie-break.
 
+## Rolling-origin consistency check
+
+**The headline is the frozen 2025-01-01 Cox model. These folds check
+consistency; they are not competing results.** Method: `docs/rolling_origin.md`.
+
+- For each cutoff k, Cox is refit under the frozen model's exact recipe:
+  penalizer 0.1, the same 23 features, the same encoding and imputation.
+  This is a refit, not re-tuning.
+- **Train:** CVEs published before k, labels censored at k.
+- **Test:** CVEs published in [k, k + 6 months), observed to 2026-09-20.
+  Windows are disjoint and all satisfy the 180-day minimum follow-up.
+- Same seed, 200 whole-CVE resamples.
+- **Sanity check, passed:** the 2025-01-01 refit reproduces the frozen
+  model's scores and its C-index of 0.850085 on the full headline test.
+
+| Cutoff k | Train rows / events | Test rows / events (CVEs) | Cox C-index | EPSS C-index |
+|---|---|---|---|---|
+| 2024-01-01 | 151,686 / 252 | 59,490 / 97 (36) | 0.857 (0.771–0.922) | 0.706 (0.604–0.796) |
+| 2024-07-01 | 210,440 / 324 | 58,880 / 125 (46) | 0.804 (0.746–0.851) | 0.621 (0.546–0.690) |
+| **2025-01-01** (headline model) | 268,944 / 441 | 64,497 / 126 (50) | 0.863 (0.804–0.918) | 0.764 (0.696–0.827) |
+| 2025-07-01 | 332,401 / 600 | 73,702 / 103 (42) | 0.858 (0.810–0.905) | 0.750 (0.647–0.840) |
+
+Paired Cox − EPSS-alone:
+
+| Cutoff k | ΔC-index | ΔRecall@10% | ΔRecall@1% |
+|---|---|---|---|
+| 2024-01-01 | **+0.151 (+0.092, +0.227)** | **+0.196 (+0.081, +0.337)** | +0.062 (+0.000, +0.128) |
+| 2024-07-01 | **+0.183 (+0.117, +0.260)** | **+0.160 (+0.071, +0.265)** | +0.000 (−0.026, +0.021) |
+| 2025-01-01 | **+0.099 (+0.055, +0.154)** | **+0.167 (+0.068, +0.289)** | **+0.103 (+0.010, +0.203)** |
+| 2025-07-01 | **+0.107 (+0.050, +0.177)** | **+0.146 (+0.021, +0.299)** | −0.029 (−0.138, +0.059) |
+
+- **C-index and recall@10%: Cox beats EPSS-alone in every fold**, with
+  intervals excluding zero.
+- **Recall@1% is not consistent.** It is significant only in the
+  2025-01-01 fold and negative in 2025-07-01, matching the
+  non-significant headline ΔRecall@1%.
+- ΔRecall@5% (in `docs/rolling_origin.md`) excludes zero in three folds.
+  In 2025-07-01 its lower bound is exactly +0.000.
+
+## Lead time (post-hoc, descriptive)
+
+**This is a post-hoc descriptive analysis, not a pre-registered metric.**
+Method: `docs/lead_time.md`.
+
+- **Models:** frozen Cox and EPSS-alone, on the 108 test CVEs later
+  KEV-listed.
+- **Catch:** a row in a model's top 10% of *that landmark's* test rows
+  (day 7/14/30).
+- **Lead time:** days from the first catching landmark to the KEV listing.
+  A model that never catches a CVE gets 0.
+- **Caveats:** the budget is retrospective (whole test period per
+  landmark). The 7/14/30 grid means both-caught timing differences can
+  only be 0, 7, 16 or 23 days.
+
+| | EPSS catches | EPSS never catches | Total |
+|---|---|---|---|
+| **Cox catches** | 54 | **19** | 73 |
+| **Cox never catches** | 2 | 33 | 35 |
+| Total | 56 | 52 (blind spots) | 108 |
+
+| Measure | Value | 95% CI |
+|---|---|---|
+| Cox lead over EPSS, median (75 CVEs either model caught) | 0 days (IQR 0–2) | (0, 0) |
+| Cox lead over EPSS, mean (same 75) | +16.9 days | (+4.8, +32.3) |
+| Cox lead over EPSS, median (54 both caught) | 0 days (IQR 0–0) | (0, 0) |
+| Both caught: Cox earlier / same landmark / later | 1 / 51 / 2 | — |
+| Lead before listing given caught, median | Cox 48 days (IQR 13–127, n=73); EPSS 48 days (IQR 11–126, n=56) | — |
+| **Blind spots Cox recovers** | **19 of 52 (36.5%)** | **(23.8%, 48.9%)** |
+| Cox lead before listing on those 19, median | 48 days (IQR 20–147.5) | (24, 139) |
+
+**Cox's advantage is coverage, not earliness.**
+
+- On CVEs both models flag, they flag at the same landmark in 51 of 54
+  cases.
+- What Cox adds is 19 listed CVEs EPSS never flags, warned a median of 48
+  days before listing. EPSS adds 2 that Cox misses.
+- The positive mean lead comes entirely from those coverage differences.
+- See the `docs/STATUS.md` decision entry.
+
 ## Robustness (`docs/robustness.md`)
 
 **Sensitivity of Cox vs EPSS-alone on test** (frozen Cox, same seed and
@@ -273,30 +354,6 @@ Read any RSF number as ≈0.81 ± 0.01.
 
 **Display calibration: evaluated and rejected** (see "Brier score and
 calibration" above).
-
-**Rolling-origin consistency check** (`docs/rolling_origin.md`). Cox was
-refit at each cutoff under the frozen recipe (no re-tuning) and tested on
-the next 6 months. The 2025-01-01 refit reproduces the frozen model exactly
-(C-index 0.850085 on the headline test).
-
-| Cutoff | Test events | Cox C-index | EPSS C-index | ΔC-index | ΔRecall@10% |
-|---|---|---|---|---|---|
-| 2024-01-01 | 97 | 0.857 | 0.706 | **+0.151 (+0.092, +0.227)** | **+0.196 (+0.081, +0.337)** |
-| 2024-07-01 | 125 | 0.804 | 0.621 | **+0.183 (+0.117, +0.260)** | **+0.160 (+0.071, +0.265)** |
-| 2025-01-01 | 126 | 0.863 | 0.764 | **+0.099 (+0.055, +0.154)** | **+0.167 (+0.068, +0.289)** |
-| 2025-07-01 | 103 | 0.858 | 0.750 | **+0.107 (+0.050, +0.177)** | **+0.146 (+0.021, +0.299)** |
-
-The headline remains the frozen 2025-01-01 model; these folds are a
-consistency check.
-
-**Lead time (post-hoc, descriptive; `docs/lead_time.md`).** Out of 108
-later-listed test CVEs, at a 10% per-landmark budget:
-
-- When both models flag a CVE, they almost always do so at the same
-  landmark (51 of 54).
-- Cox flags 19 CVEs that EPSS never does. All are blind spots, flagged a
-  median of 48 days (IQR 20–147.5) before listing.
-- EPSS flags 2 that Cox never does.
 
 ## Limitations
 
