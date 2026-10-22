@@ -488,3 +488,66 @@ No model, hyperparameter or design choice changed.
   budget to match Cox's recall at 5% / 10%, both CIs excluding 1×. At 1% it
   is 1.7×, with a CI that includes 1×.
 
+## Decision: Cox's advantage is stated as coverage, not earliness (2026-10-22)
+
+**Decision.** The project's claim about Cox vs EPSS-alone is now
+**coverage**, not earliness. Cox flags listed CVEs that EPSS never flags.
+On CVEs both flag, it does not flag them sooner. Report and deck wording
+must not say Cox "warns earlier".
+
+**What it replaces.** The working framing, per the project owner, was that
+Cox "warns earlier" than EPSS. That framing was never written into this
+repository: a grep of `docs/`, `api/`, `dashboard/` and `scripts/` finds no
+such claim. It is recorded here so the report and deck follow this decision.
+
+**Evidence** (`docs/lead_time.md`; numbers in `docs/final_results.md`,
+"Lead time"). This is a post-hoc descriptive analysis on the frozen models,
+at a 10% per-landmark budget, over the 108 later-listed test CVEs.
+
+- Both models flag 54. In 51 of those they flag at the **same landmark**.
+  Cox is earlier for 1 and later for 2.
+- Cox flags 19 that EPSS never does, all EPSS blind spots. EPSS flags 2
+  that Cox never does. 33 are flagged by neither.
+- **Median Cox lead over EPSS is 0 days** (CI 0 to 0), over both the
+  either-caught and the both-caught set.
+- **Given a model flags a CVE, the lead before listing is the same for
+  both:** median 48 days for Cox and 48 for EPSS.
+- Cox recovers 19 of 52 blind spots (36.5%, CI 23.8–48.9%), a median 48
+  days before listing.
+
+**Reasoning.**
+
+1. **"Earlier" describes timing on the same CVEs, and on those there is no
+   timing difference.** 51 of 54 shared catches land on the same landmark,
+   and both models' lead given a catch is a median 48 days.
+2. **The only positive lead statistic comes from coverage.** The mean
+   +16.9 days (CI +4.8 to +32.3) exists only because the convention
+   gives a never-caught CVE a lead of 0. The 19 Cox-only catches produce
+   the whole mean. Reporting it as "warns 17 days earlier" would present a
+   coverage difference as a timing difference.
+3. **The design cannot measure fine-grained earliness.** With landmarks at
+   days 7, 14 and 30, the only possible timing differences are 0, 7, 16 or
+   23 days. Most catches by both models happen at day 7, the first
+   landmark, so neither model can be earlier on those CVEs.
+4. **The coverage claim is the one the confirmatory metrics already
+   support.**
+   - The blind-spot catch rate, 0.338 at the pooled 10% budget, was
+     defined before test.
+   - Recall@10% is +0.172 over EPSS, CI excluding zero.
+   - The rolling-origin folds show the recall@10% gap in all four windows.
+   The lead-time analysis is consistent with these. It adds the
+   description "a median 48 days before listing" for the recovered blind
+   spots.
+
+**How to apply.**
+
+- **Say:** "Cox flags KEV-bound CVEs that EPSS misses (19 of 52 EPSS blind
+  spots, a median 48 days before listing)", and "EPSS needs ~2.2–2.3× the
+  triage budget to match Cox's recall at 5–10%".
+- **Don't say:** that Cox warns earlier, or quote the +16.9-day mean as
+  lead time.
+- **Any future earliness claim needs its own design, specified before test:**
+  daily or weekly landmarks, a real-time (rolling) budget, and a timing
+  metric conditioned on both models catching the CVE.
+- Lead time stays labelled post-hoc and descriptive everywhere it is cited.
+
