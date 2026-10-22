@@ -28,8 +28,8 @@ from scripts.evaluate.data_splits import DATA_CUTOFF
 
 CVE_ID_PATTERN = r"^CVE-\d{4}-\d{4,}$"
 CALIBRATION_NOTE = (
-    "Cox survival probabilities are under-dispersed (predicted P(KEV within 90d) spans ~0.08-0.18% on test; "
-    "top decile under-predicted ~6x, docs/model_comparison.md). Use them to order CVEs, not as calibrated "
+    "Cox survival probabilities are under-dispersed (predicted P(KEV within 90d) spans 0.078-0.191% on test; "
+    "top decile under-predicted ~6x, docs/final_results.md). Use them to order CVEs, not as calibrated "
     "probabilities."
 )
 ENCODING_ISSUE = (
