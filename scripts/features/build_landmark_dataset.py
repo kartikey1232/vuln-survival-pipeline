@@ -416,6 +416,30 @@ def compute_epss_asof_features(epss: pd.DataFrame, queries: pd.DataFrame) -> pd.
     return out
 
 
+# Scale of every NUMERIC column training.training_dataset stores (see
+# database/schema.sql); Postgres rounds to it on write. The in-memory build
+# is unrounded: the target encodings differ by up to 5e-7, and float
+# arithmetic (e.g. epss_pct_delta_7d = now - 7d_ago) leaves ~1e-17 noise.
+STORAGE_ROUNDING = {
+    "cvss_base_score": 1,
+    "epss_pct_now": 6, "epss_pct_7d_ago": 6, "epss_pct_delta_7d": 6, "epss_pct_first": 6,
+    "epss_pct_max_to_date": 6, "epss_score_at_asof_raw": 6,
+    "cwe_kev_rate_expanding": 6, "cna_kev_rate_expanding": 6,
+}
+
+
+def round_to_storage(df: pd.DataFrame) -> pd.DataFrame:
+    """Rounds an in-memory build to the precision training.training_dataset
+    stores, i.e. to the values the frozen models were fit on. Used by
+    anything that consumes build() output directly instead of reading the
+    table (scripts/evaluate/rolling_origin.py); see
+    tests/test_features/test_build_reproduces_training_dataset.py."""
+    df = df.copy()
+    for c, decimals in STORAGE_ROUNDING.items():
+        df[c] = df[c].round(decimals)
+    return df
+
+
 def build(cfg=None, train_test_cutoff: date = TRAIN_TEST_CUTOFF) -> pd.DataFrame:
     """In-memory build of every (cve, landmark) row. `train_test_cutoff`
     only sets the split, condition 3 and train-label censoring; every

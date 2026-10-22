@@ -54,6 +54,7 @@ from scripts.features.build_landmark_dataset import (
     STUDY_END,
     STUDY_START,
     build,
+    round_to_storage,
 )
 from scripts.models.xgboost_aft import _fix_zero_durations
 
@@ -68,11 +69,7 @@ CHECK_COLUMNS = [c for c in MODEL_FEATURE_COLUMNS if c != "landmark_day"] + [
 
 def full_grid() -> pd.DataFrame:
     df = build(train_test_cutoff=STUDY_START)
-    df = df[~df["spans_version_transition"]].reset_index(drop=True)
-    # training_dataset stores these as NUMERIC(8,6), and the frozen model was
-    # fit on the stored values; the in-memory build is unrounded.
-    for c in ("cwe_kev_rate_expanding", "cna_kev_rate_expanding"):
-        df[c] = df[c].round(6)
+    df = round_to_storage(df[~df["spans_version_transition"]].reset_index(drop=True))
     df["composite_event"] = df["event_observed"].astype(bool)
     return df
 
