@@ -416,7 +416,13 @@ def compute_epss_asof_features(epss: pd.DataFrame, queries: pd.DataFrame) -> pd.
     return out
 
 
-def build(cfg=None) -> pd.DataFrame:
+def build(cfg=None, train_test_cutoff: date = TRAIN_TEST_CUTOFF) -> pd.DataFrame:
+    """In-memory build of every (cve, landmark) row. `train_test_cutoff`
+    only sets the split, condition 3 and train-label censoring; every
+    feature is computed as of each row's own as_of_date and does not depend
+    on it. Passing STUDY_START makes every row "test" (no condition-3 drops,
+    every label observed to DATA_CUTOFF), which is how
+    scripts/evaluate/rolling_origin.py gets the full grid for other cutoffs."""
     cfg = cfg or get_config()
     engine = get_engine()
     landmarks = cfg.checkpoints.days
@@ -426,7 +432,7 @@ def build(cfg=None) -> pd.DataFrame:
 
     study = base[(base["published_date"].dt.date >= STUDY_START) & (base["published_date"].dt.date <= STUDY_END)].copy()
 
-    candidates = generate_candidate_grid(study, landmarks, TRAIN_TEST_CUTOFF)
+    candidates = generate_candidate_grid(study, landmarks, train_test_cutoff)
 
     # --- condition 2 + EPSS features, via merge_asof (forward-fill only) ---
     epss = _load_epss_timeline(engine, study["cve_id"])
@@ -506,7 +512,7 @@ def build(cfg=None) -> pd.DataFrame:
     encode("primary_cwe_id", "cwe_kev_rate_expanding")
     encode("source_identifier", "cna_kev_rate_expanding")
 
-    candidates = compute_labels(candidates, TRAIN_TEST_CUTOFF, DATA_CUTOFF)
+    candidates = compute_labels(candidates, train_test_cutoff, DATA_CUTOFF)
     return candidates
 
 
