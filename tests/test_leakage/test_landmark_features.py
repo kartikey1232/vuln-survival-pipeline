@@ -192,6 +192,23 @@ def test_no_row_exists_for_cve_at_landmark_on_or_after_kev_date():
 
 # --- allowlist test (STEP 1a) ---
 
+# also checked against training.holdout_2026 (tests/test_leakage/test_holdout_cohort.py)
+BANNED_COLUMNS = {
+    # legacy day-30-design columns
+    "kev_observed_by_checkpoint", "epss_score_at_checkpoint", "epss_percentile_at_checkpoint",
+    "epss_slope_7d", "epss_growth_rate_7d", "epss_volatility_7d", "epss_percentile_change",
+    "days_until_poc", "poc_observed_by_checkpoint", "days_until_kev",
+    "related_vendor_kev_velocity", "related_cwe_kev_velocity",
+    "rolling_epss_avg_7d", "rolling_epss_avg_30d", "composite_risk_index",
+    "vendor_historical_kev_rate", "time_since_disclosure_days", "epss_max_to_date",
+    "cwe_historical_base_rate",
+    # enrichment-leaking columns (NVD's own analyst-added enrichment,
+    # present only once a CVE is analyst-reviewed — preferentially for
+    # KEV-listed CVEs)
+    "vendor_kev_rate_expanding", "vendor_count", "product_count", "cvss_missing",
+    "vulnStatus", "vuln_status", "lastModified", "last_modified_date",
+}
+
 
 def test_export_column_allowlist_exact():
     """The exported column set must be EXACTLY the model-feature allowlist
@@ -202,20 +219,4 @@ def test_export_column_allowlist_exact():
     docs/enrichment_leakage.md for why those were removed."""
     assert set(EXPORT_COLUMNS) == set(MODEL_FEATURE_COLUMNS) | set(NON_FEATURE_COLUMNS)
     assert len(EXPORT_COLUMNS) == len(set(EXPORT_COLUMNS))  # no duplicates
-
-    banned_columns = {
-        # legacy day-30-design columns
-        "kev_observed_by_checkpoint", "epss_score_at_checkpoint", "epss_percentile_at_checkpoint",
-        "epss_slope_7d", "epss_growth_rate_7d", "epss_volatility_7d", "epss_percentile_change",
-        "days_until_poc", "poc_observed_by_checkpoint", "days_until_kev",
-        "related_vendor_kev_velocity", "related_cwe_kev_velocity",
-        "rolling_epss_avg_7d", "rolling_epss_avg_30d", "composite_risk_index",
-        "vendor_historical_kev_rate", "time_since_disclosure_days", "epss_max_to_date",
-        "cwe_historical_base_rate",
-        # enrichment-leaking columns (NVD's own analyst-added enrichment,
-        # present only once a CVE is analyst-reviewed — preferentially for
-        # KEV-listed CVEs)
-        "vendor_kev_rate_expanding", "vendor_count", "product_count", "cvss_missing",
-        "vulnStatus", "vuln_status", "lastModified", "last_modified_date",
-    }
-    assert banned_columns.isdisjoint(EXPORT_COLUMNS)
+    assert BANNED_COLUMNS.isdisjoint(EXPORT_COLUMNS)

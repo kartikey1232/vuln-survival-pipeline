@@ -84,17 +84,25 @@ async def _fetch_window(
     client,
     rate_limiter: SlidingWindowRateLimiter,
     cfg,
+    results_per_page: int | None = None,
 ) -> tuple[int, int]:
-    """Returns (pages_fetched, cves_staged) for this window."""
+    """Returns (pages_fetched, cves_staged) for this window.
+
+    `results_per_page` overrides config for this run. Page files are named by
+    page number, so a non-default page size gets its own window directory
+    (<start>_<end>_pp<N>): a re-run can then never skip a page that was
+    cached under a different page size."""
     nvd_cfg = cfg.sources.nvd
-    window_dir = cfg.paths.data_raw / "nvd" / f"{window_start.isoformat()}_{window_end.isoformat()}"
+    per_page = results_per_page or nvd_cfg.results_per_page
+    suffix = "" if per_page == nvd_cfg.results_per_page else f"_pp{per_page}"
+    window_dir = cfg.paths.data_raw / "nvd" / f"{window_start.isoformat()}_{window_end.isoformat()}{suffix}"
     start_index = 0
     total_results: int | None = None
     pages_fetched = 0
     cves_staged = 0
 
     while total_results is None or start_index < total_results:
-        page_num = start_index // nvd_cfg.results_per_page
+        page_num = start_index // per_page
         dest_path = window_dir / f"page_{page_num:04d}.json"
         file_path_str = str(dest_path.relative_to(cfg.project_root))
 
@@ -103,7 +111,7 @@ async def _fetch_window(
 
         if existing is None:
             params = {
-                "resultsPerPage": nvd_cfg.results_per_page,
+                "resultsPerPage": per_page,
                 "startIndex": start_index,
                 "pubStartDate": _nvd_datetime(window_start),
                 "pubEndDate": _nvd_datetime(window_end, end_of_day=True),
@@ -115,9 +123,11 @@ async def _fetch_window(
                     client, nvd_cfg.base_url, params=params, headers=headers,
                     retry_cfg=nvd_cfg.retry, rate_limiter=rate_limiter,
                 )
-            except DownloadError:
+            except DownloadError as exc:
+                cause = exc.__cause__.last_attempt.exception() if hasattr(exc.__cause__, "last_attempt") else None
                 logger.exception("NVD page fetch failed", extra={"extra_fields": {
                     "window": f"{window_start}_{window_end}", "start_index": start_index,
+                    "results_per_page": per_page, "last_error": repr(cause),
                 }})
                 raise
 
@@ -162,12 +172,13 @@ async def _fetch_window(
             total_results = payload.get("totalResults", 0)
 
         pages_fetched += 1
-        start_index += nvd_cfg.results_per_page
+        start_index += per_page
 
     return pages_fetched, cves_staged
 
 
-async def _run(start_date: str | None, end_date: str | None, mode: str | None) -> None:
+async def _run(start_date: str | None, end_date: str | None, mode: str | None,
+               results_per_page: int | None = None) -> None:
     cfg = get_config()
     nvd_cfg = cfg.sources.nvd
     start, end = _resolve_range(cfg, start_date, end_date, mode)
@@ -183,7 +194,7 @@ async def _run(start_date: str | None, end_date: str | None, mode: str | None) -
     total_cves = 0
     async with make_client() as client:
         for window_start, window_end in windows:
-            pages, cves = await _fetch_window(window_start, window_end, client, rate_limiter, cfg)
+            pages, cves = await _fetch_window(window_start, window_end, client, rate_limiter, cfg, results_per_page)
             total_pages += pages
             total_cves += cves
             log_with_fields(
@@ -198,8 +209,9 @@ async def _run(start_date: str | None, end_date: str | None, mode: str | None) -
     )
 
 
-def main(*, start_date: str | None = None, end_date: str | None = None, mode: str | None = None) -> None:
-    asyncio.run(_run(start_date, end_date, mode))
+def main(*, start_date: str | None = None, end_date: str | None = None, mode: str | None = None,
+         results_per_page: int | None = None) -> None:
+    asyncio.run(_run(start_date, end_date, mode, results_per_page))
 
 
 if __name__ == "__main__":

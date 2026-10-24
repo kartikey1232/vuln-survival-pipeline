@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 
+import numpy as np
 import pandas as pd
 
 from config.config_schema import get_config
@@ -54,22 +55,9 @@ def explanation_frame(df: pd.DataFrame, split: str, priority, firing: pd.DataFra
     return out
 
 
-def main(encoding: str = "corrected"):
-    """`encoding` picks which cox_risk_pct parquet (risk_percentile.py
-    --encoding) is scored; the frozen design is the same either way."""
-    cfg = get_config()
-    suffix = "" if encoding == "corrected" else "_original_encoding"
-    config_path = cfg.project_root / "models" / "fuzzy_config.json"
-    if not config_path.exists():
-        raise RuntimeError("models/fuzzy_config.json missing: run scripts.fuzzy.design (validation only) first")
-    config = json.loads(config_path.read_text())
-    if config.get("monotonicity_check", {}).get("worst_step", -1) < -1e-9:
-        raise RuntimeError("frozen fuzzy config has no passing monotonicity check")
-
-    inputs = pd.read_parquet(cfg.project_root / "data" / "training" / OUTPUT_FILENAMES[encoding])
-    test = inputs[inputs["split"] == "test"].reset_index(drop=True)
-    val = validation_rows(inputs)
-
+def test_results(test: pd.DataFrame, config: dict) -> tuple[dict, np.ndarray, pd.DataFrame, dict]:
+    """The test metrics for one frozen config: (results, priority, firing,
+    rankings). Labels come from `test` as given."""
     log_with_fields(logger, logging.INFO, "scoring test rows", rows=len(test))
     priority, firing = fl.score(fl.model_inputs(test), config)
     scores = rankings(test, priority, config["linear_blend"])
@@ -93,6 +81,32 @@ def main(encoding: str = "corrected"):
         )
         results["blind_spot_catch_rate_10pct"].setdefault("per_model", {}).update(bs["per_model"])
         results["blind_spot_catch_rate_10pct"][f"paired_fuzzy_minus_{ref}"] = bs["paired_vs_reference"]["Fuzzy"]
+
+    return results, priority, firing, scores
+
+
+def frozen_config(cfg) -> dict:
+    config_path = cfg.project_root / "models" / "fuzzy_config.json"
+    if not config_path.exists():
+        raise RuntimeError("models/fuzzy_config.json missing: run scripts.fuzzy.design (validation only) first")
+    config = json.loads(config_path.read_text())
+    if config.get("monotonicity_check", {}).get("worst_step", -1) < -1e-9:
+        raise RuntimeError("frozen fuzzy config has no passing monotonicity check")
+    return config
+
+
+def main(encoding: str = "corrected"):
+    """`encoding` picks which cox_risk_pct parquet (risk_percentile.py
+    --encoding) is scored; the frozen design is the same either way."""
+    cfg = get_config()
+    suffix = "" if encoding == "corrected" else "_original_encoding"
+    config = frozen_config(cfg)
+
+    inputs = pd.read_parquet(cfg.project_root / "data" / "training" / OUTPUT_FILENAMES[encoding])
+    test = inputs[inputs["split"] == "test"].reset_index(drop=True)
+    val = validation_rows(inputs)
+
+    results, priority, firing, scores = test_results(test, config)
 
     val_priority, val_firing = fl.score(fl.model_inputs(val), config)
     explanations = pd.concat([

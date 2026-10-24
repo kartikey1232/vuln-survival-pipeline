@@ -146,13 +146,7 @@ def _ranking_check(test_df, scores: dict) -> dict:
     return out
 
 
-def main():
-    cfg = get_config()
-    models_dir = cfg.project_root / "models"
-    with open(models_dir / "cox_final.pkl", "rb") as f:
-        cox = pickle.load(f)
-
-    train_df, test_df = _prep()
+def run(train_df: pd.DataFrame, test_df: pd.DataFrame, cox: dict, figure_path) -> dict:
     published = train_df["as_of_date"] - pd.to_timedelta(train_df["landmark_day"].astype(int), unit="D")
     val_df = train_df[(published >= FIT_CUTOFF) & (published < VAL_CUTOFF)].reset_index(drop=True)
 
@@ -186,13 +180,22 @@ def main():
     ranking = _ranking_check(test_df, {"cox_partial_hazard": test_hazard,
                                        **{f"{k}_p90": v for k, v in preds.items()}})
 
-    _plot(deciles, cfg.project_root / "docs" / "figures" / "calibration_90d_calibrated.png")
+    _plot(deciles, figure_path)
 
     out = {"validation_rule_choice": chosen, "shipped": None, "calibrators": calibrators,
            "validation": val_summary, "cv": cv, "reference_p90_train_km": ref90, "test_brier_90d": brier,
            "test_deciles": {k: v.to_dict(orient="records") for k, v in deciles.items()},
            "test_ranking_check": ranking,
            "test_p90_range": {k: [float(v.min()), float(v.max())] for k, v in preds.items()}}
+    return out
+
+
+def main():
+    cfg = get_config()
+    with open(cfg.project_root / "models" / "cox_final.pkl", "rb") as f:
+        cox = pickle.load(f)
+    train_df, test_df = _prep()
+    out = run(train_df, test_df, cox, cfg.project_root / "docs" / "figures" / "calibration_90d_calibrated.png")
     with open(cfg.project_root / "scratch" / "calibration_90d.json", "w") as f:
         json.dump(out, f, indent=2, default=str)
     print(json.dumps({k: out[k] for k in ("validation_rule_choice", "validation", "cv", "test_brier_90d",

@@ -137,10 +137,11 @@ def evaluate_subset(df: pd.DataFrame, cox: np.ndarray, label: str) -> dict:
     }
 
 
-def main():
-    cfg = get_config()
-    models_dir = cfg.project_root / "models"
-
+def load_test_aug(models_dir) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    """(test rows + transition rows, is_transition, frozen Cox scores),
+    stored labels. Refuses to return unless the rebuild matches
+    training_dataset and frozen Cox reproduces its recorded C-index on the
+    default rows."""
     train_raw, test_raw = load_full_train_and_test()
     rebuilt = load_rebuilt_test_rows()
     _check_rebuild(rebuilt, test_raw)
@@ -166,7 +167,11 @@ def main():
                                  test_aug.loc[base, "composite_event"].values.astype(int))
     if abs(got - recorded) > 1e-9:
         raise RuntimeError(f"baseline Cox C-index {got} != recorded corrected-encoding {recorded}")
+    return test_aug, is_transition, cox
 
+
+def evaluate_subsets(test_aug: pd.DataFrame, is_transition: np.ndarray, cox: np.ndarray) -> dict:
+    base = ~is_transition
     subsets = {
         "baseline": base,
         "a_with_transition_rows": np.ones(len(test_aug), bool),
@@ -178,6 +183,13 @@ def main():
     out["b_excluding_vulncheck_cna"]["removed"] = _counts(
         test_aug[base & (test_aug["cna"] == VULNCHECK_CNA).to_numpy()])
     out["c_cna_cvss_present"]["removed"] = _counts(test_aug[base & (test_aug["cvss_cna_missing"] == 1).to_numpy()])
+    return out
+
+
+def main():
+    cfg = get_config()
+    test_aug, is_transition, cox = load_test_aug(cfg.project_root / "models")
+    out = evaluate_subsets(test_aug, is_transition, cox)
 
     with open(cfg.project_root / "scratch" / "sensitivity.json", "w") as f:
         json.dump(out, f, indent=2, default=str)

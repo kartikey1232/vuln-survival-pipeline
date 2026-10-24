@@ -2,12 +2,14 @@
 Cleans staging.epss_scores_raw into canonical.epss_timeline — one row per
 (cve_id, snapshot_date), marked is_observed=TRUE, fill_method='observed'.
 
-This is NOT the same as EPSS reconstruction: it only materializes days that
-were actually observed in a downloaded snapshot. Forward-filling the gaps
-between observed days into a dense daily timeline is
-scripts/epss_reconstruct/reconstruct_epss_timeline.py (not implemented
-yet) — canonical.epss_timeline.fill_method='ffill' rows do not exist until
-that script runs.
+It only materializes days that were actually observed in a downloaded
+snapshot. No dense forward-filled timeline is materialized:
+canonical.epss_timeline.fill_method='ffill' rows do not exist. The feature
+build forward-fills at query time instead (merge_asof, backward direction,
+scripts/features/build_landmark_dataset.py), which is the
+epss_reconstruction policy in config/config.yaml. The planned
+scripts/epss_reconstruct/ package was never implemented and was removed on
+2026-10-24.
 
 canonical.epss_timeline.cve_id has a foreign key to canonical.cve, so only
 staged EPSS rows for CVEs already cleaned by clean_nvd.py are inserted;

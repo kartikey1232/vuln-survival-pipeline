@@ -11,7 +11,7 @@ EXPECTED_TABLE_COUNTS = {
     "staging": 6,
     "canonical": 10,
     "features": 3,
-    "training": 3,
+    "training": 4,
 }
 
 EXPECTED_TABLES = {
@@ -36,7 +36,7 @@ EXPECTED_TABLES = {
         "exploitdb_cve_map",
     },
     "features": {"static_features", "temporal_features", "derived_features"},
-    "training": {"survival_labels", "training_dataset", "prediction"},
+    "training": {"survival_labels", "training_dataset", "prediction", "holdout_2026"},
 }
 
 

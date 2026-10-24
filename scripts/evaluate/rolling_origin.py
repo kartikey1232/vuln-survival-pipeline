@@ -26,6 +26,12 @@ crosses 2025-01-01 for CVEs published before it, which would truncate the
 training_dataset exactly (features and labels, train rows relabeled at
 2025-01-01) or the script refuses to run.
 
+build() reads the current KEV catalog, which lists 6 test CVEs the stored
+table's catalog did not (scripts/evaluate/label_corrections.py). main()
+gives those rows their stored labels, so the recorded numbers stay
+reproducible; scripts/evaluate/corrected_labels.py runs the folds with the
+corrected ones.
+
 Sanity check: the 2025-01-01 refit must reproduce the frozen model's scores
 and its recorded corrected-encoding headline C-index on the full test set.
 
@@ -48,6 +54,7 @@ from scripts.evaluate.common import evaluate_model, fast_concordance_index, pair
 from scripts.evaluate.data_splits import VAL_CUTOFF, _relabel, load_full_train_and_test
 from scripts.evaluate.features import impute_numeric, prepare_raw
 from scripts.evaluate.final_comparison import _fit_cox
+from scripts.evaluate.label_corrections import set_labels
 from scripts.evaluate.sensitivity import frozen_cox_scores
 from scripts.features.build_landmark_dataset import (
     MODEL_FEATURE_COLUMNS,
@@ -74,10 +81,11 @@ def full_grid() -> pd.DataFrame:
     return df
 
 
-def _check_against_training_dataset(grid: pd.DataFrame) -> None:
-    """The headline split rebuilt from the grid must equal training_dataset."""
-    train_td, test_td = load_full_train_and_test()
-    td = pd.concat([train_td, test_td], ignore_index=True)
+def _check_against_training_dataset(grid: pd.DataFrame, td: pd.DataFrame | None = None) -> None:
+    """The headline split rebuilt from the grid must equal training_dataset
+    (or `td`, a relabelled copy of it)."""
+    if td is None:
+        td = pd.concat(load_full_train_and_test(), ignore_index=True)
     train = _relabel(grid[(grid["published_date"] < HEADLINE_CUTOFF) & (grid["as_of_date"] < HEADLINE_CUTOFF)],
                      HEADLINE_CUTOFF)
     test = grid[grid["published_date"] >= HEADLINE_CUTOFF]
@@ -140,16 +148,8 @@ def headline_sanity(grid: pd.DataFrame, models_dir) -> dict:
     return out
 
 
-def main():
-    cfg = get_config()
-    models_dir = cfg.project_root / "models"
-    grid = full_grid()
-    _check_against_training_dataset(grid)
-    log_with_fields(logger, logging.INFO, "rebuild matches training_dataset", rows=len(grid))
-
-    out = {"headline_sanity": headline_sanity(grid, models_dir), "folds": {}}
-    log_with_fields(logger, logging.INFO, "2025-01-01 refit reproduces frozen model", **out["headline_sanity"])
-
+def evaluate_folds(grid: pd.DataFrame, models_dir) -> dict:
+    folds = {}
     for k in CUTOFFS:
         train, test = fold_frames(grid, k)
         cox = _fit_cox(train, test, MODEL_FEATURE_COLUMNS)
@@ -159,12 +159,25 @@ def main():
         if k == HEADLINE_CUTOFF:  # same rows, frozen model: must be identical
             fold["frozen_model_on_fold_rows"] = evaluate_model(test, frozen_cox_scores(test, models_dir),
                                                                label="frozen Cox 2025-01-01 fold").as_dict()
-        out["folds"][label] = fold
+        folds[label] = fold
         p = fold["paired_cox_minus_epss"]
         print(label, fold["train"], fold["test"], f"Cox C={fold['Cox']['cindex']['point']:.4f}",
               f"EPSS C={fold['EPSS-alone']['cindex']['point']:.4f}",
               {m: (round(v["point_diff"], 4), round(v["ci_lower"], 4), round(v["ci_upper"], 4), v["excludes_zero"])
                for m, v in p.items()})
+    return folds
+
+
+def main():
+    cfg = get_config()
+    models_dir = cfg.project_root / "models"
+    grid, _ = set_labels(full_grid(), "stored")
+    _check_against_training_dataset(grid)
+    log_with_fields(logger, logging.INFO, "rebuild matches training_dataset", rows=len(grid))
+
+    out = {"headline_sanity": headline_sanity(grid, models_dir)}
+    log_with_fields(logger, logging.INFO, "2025-01-01 refit reproduces frozen model", **out["headline_sanity"])
+    out["folds"] = evaluate_folds(grid, models_dir)
 
     with open(cfg.project_root / "scratch" / "rolling_origin.json", "w") as f:
         json.dump(out, f, indent=2, default=str)

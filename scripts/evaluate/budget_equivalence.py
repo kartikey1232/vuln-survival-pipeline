@@ -50,25 +50,30 @@ def equivalence(cox: np.ndarray, epss: np.ndarray, event: np.ndarray) -> np.ndar
     return np.array(out)
 
 
-def main():
-    cfg = get_config()
-    models_dir = cfg.project_root / "models"
-    _, test_df = _prep()
-    cox = frozen_cox_scores(test_df, models_dir)
+def budget_results(test_df, cox: np.ndarray) -> dict:
     epss = test_df["epss_pct_now"].fillna(0).to_numpy()
     event = test_df["composite_event"].values.astype(int)
-    recorded = json.loads((models_dir / "cox_final_metadata.json").read_text())[
-        "test_metrics_corrected_encoding"]["test_cindex"]
-    if abs(fast_concordance_index(test_df["event_time"].clip(lower=0.5).values, cox, event) - recorded) > 1e-9:
-        raise RuntimeError("frozen Cox does not reproduce its recorded corrected-encoding C-index")
-
     names = [f"{s}_{int(b * 100)}pct" for b in DEFAULT_BUDGETS
              for s in ("cox_recall", "epss_recall", "epss_budget_to_match", "effort_ratio")]
     point = equivalence(cox, epss, event)
     samples = _bootstrap_rows(test_df["cve_id"].values, lambda idx: equivalence(cox[idx], epss[idx], event[idx]),
                               len(names), n_resamples=200, seed=DEFAULT_SEED, log_every=50,
                               log_label="budget equivalence")
-    out = {n: _summarize(point[j], samples[:, j]).as_dict() for j, n in enumerate(names)}
+    return {n: _summarize(point[j], samples[:, j]).as_dict() for j, n in enumerate(names)}
+
+
+def main():
+    cfg = get_config()
+    models_dir = cfg.project_root / "models"
+    _, test_df = _prep()
+    cox = frozen_cox_scores(test_df, models_dir)
+    event = test_df["composite_event"].values.astype(int)
+    recorded = json.loads((models_dir / "cox_final_metadata.json").read_text())[
+        "test_metrics_corrected_encoding"]["test_cindex"]
+    if abs(fast_concordance_index(test_df["event_time"].clip(lower=0.5).values, cox, event) - recorded) > 1e-9:
+        raise RuntimeError("frozen Cox does not reproduce its recorded corrected-encoding C-index")
+
+    out = budget_results(test_df, cox)
     with open(cfg.project_root / "scratch" / "budget_equivalence.json", "w") as f:
         json.dump(out, f, indent=2)
     for n, r in out.items():

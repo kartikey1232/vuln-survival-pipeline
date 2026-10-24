@@ -109,8 +109,11 @@ feature build uses.
 
 ### c) Rows with a CNA-supplied CVSS score
 
-This test addresses the residual CVSS-presence gap (2.8pp train / 6.2pp
-test). It keeps 138,956 rows (47,203 CVEs) with 225 events (93 CVEs) and
+This test addresses the residual CVSS-presence gap: train −2.76pp
+(positives *more* often missing a CNA-CVSS score), test +6.23pp (positives
+*less* often missing one), at landmark-row level. *[Corrected 2026-10-23;
+originally quoted as "(2.8pp train / 6.2pp test)" with no sign or level.
+See `docs/STATUS.md`, "Correction: residual CNA-CVSS presence gap".]* It keeps 138,956 rows (47,203 CVEs) with 225 events (93 CVEs) and
 removes 39,800 rows and 43 events.
 
 - Within this subset `cvss_cna_missing` is constant, so Cox cannot use CVSS
@@ -119,8 +122,10 @@ removes 39,800 rows and 43 events.
   Both models score higher here than at baseline.
 - **CVSS presence is not what drives Cox's advantage over EPSS.** What
   this subset does *not* test is whether the presence gap inflates
-  validation metrics relative to test. That caveat is about validation and
-  stays as stated.
+  validation metrics relative to test. *[Corrected 2026-10-23: that caveat
+  is **not established**. It assumed a larger same-direction gap on train,
+  and the train gap is smaller and opposite in sign. Originally: "That
+  caveat is about validation and stays as stated."]*
 
 ## 2. Re-runs of the two stale analyses (corrected encoding)
 

@@ -350,3 +350,155 @@ re-defined after it.
   level above it, so the rules discriminate within the top 5%.
 - Whether dropping or weakening the rules that lift EPSS-high rows (R10,
   R12, R13) closes the gap to Cox.
+
+### Observations for the redesign: CVE-2023-21716 (2026-10-23)
+
+These come from a dashboard inspection of CVE-2023-21716 (Microsoft Word
+RCE, train split, fit period, CNA CVSS 9.8, not KEV-listed). They are
+inputs to the redesign, not changes to the frozen layer. The numbers are
+from `GET /cve/CVE-2023-21716` and from re-scoring with the frozen config.
+(The holdout protocol has no registered-experiment entry yet, so they are
+recorded here.)
+
+**1. A concrete instance of the 79.52 top-end tie.**
+
+| Landmark | `cox_risk_pct` | `epss_pct_now` | Priority |
+|---|---|---|---|
+| Day 7 (2023-02-21) | 0.9949 | 0.6096 | 79.52381 |
+| Day 14 (2023-02-28) | 0.9978 | 0.7556 | 79.52381 |
+
+This is the known maximum plateau (79.52). Every set that fires is
+saturated at both landmarks:
+- `cox_risk` VeryHigh = 1 (above 0.8990).
+- `epss` VeryHigh = 1 (above 0.4174).
+- `cvss` Critical = 1.
+
+R01, R05, R09, R10, R11 and R14 fire at 1.0 at both landmarks. R03 drops
+from 0.417 to 0.006, but Critical is already held at 1.0 by R01/R11/R14
+under max aggregation, so that drop cannot move the score. The ranking is
+unchanged too, because ties are broken by `cox_risk_pct`.
+
+**2. The EPSS input saturates far below the top of its scale.**
+- **Input:** `epss` is `epss_pct_now`, EPSS's own percentile in [0, 1]
+  (rank among all CVEs EPSS scores that day). It is **not** the raw
+  probability, which for this CVE was 0.01156 on day 7. The universe is
+  [0, 1].
+- **Sets:** Low trap [0, 0, 0.1020, 0.1634]; Medium tri [0.1020,
+  0.1634, 0.2766]; High tri [0.1634, 0.2766, 0.4174]; VeryHigh trap
+  [0.2766, 0.4174, 1, 1].
+- **Saturation:** VeryHigh starts rising at the 27.7th EPSS percentile and
+  **reaches 1.0 at the 41.7th EPSS percentile**. That is the 95th
+  percentile of *validation landmark rows*, because young CVEs rank low in
+  EPSS's population. This is why R10 fires at 1.00 with EPSS at the 61st
+  percentile.
+- **Flag:** on EPSS's own scale, VeryHigh saturates well below the 90th
+  percentile. Every row above the 41.7th EPSS percentile gets the same EPSS
+  memberships, so EPSS cannot discriminate among them.
+
+**3. This CVE shows the EPSS saturation is not the binding cause of the
+top tie. Cox saturation is.** Re-scoring with this CVE's `cox_risk_pct`
+and CVSS fixed, and only `epss_pct_now` varied:
+
+| `epss_pct_now` | 0.00 | 0.10 | 0.1634 | 0.2766 | 0.35 | 0.4174 | 0.61 | 1.00 |
+|---|---|---|---|---|---|---|---|---|
+| Priority (cox 0.995) | 79.52 | 79.52 | 79.52 | **69.67** | **72.06** | 79.52 | 79.52 | 79.52 |
+
+The same holds at `cox_risk_pct` 0.85. Once `cox_risk` is VeryHigh and
+CVSS is Critical, the Critical and High consequents are already at 1.0
+from Cox and CVSS rules alone. So EPSS cannot raise the priority whatever
+its value, and moving VeryHigh's saturation point higher would not by
+itself break this tie. What binds is `cox_risk` VeryHigh saturating at 0.899,
+together with max aggregation. Breaking the tie needs discrimination
+there.
+
+**4. Priority is not monotone in EPSS.** The table above shows a **dip of
+up to 9.9 points** where EPSS is High (peak at 0.2766). The cause is R13
+("epss is High → Medium"): it adds Medium mass that drags the centroid
+down, and it switches off again once EPSS reaches VeryHigh. So a CVE at
+the 28th EPSS percentile scores *below* the same CVE at the 0th or the
+61st. The design's monotonicity check (`design.py`) sweeps `cox_risk` at
+fixed EPSS values. It does not test monotonicity *in EPSS*, which is why
+this passed. R13 is not the only cause; see "Monotonicity defect" below
+for the full per-input sweep.
+
+**5. No exploit-availability contribution.** CVE-2023-21716 has **no
+Exploit-DB entry** in `canonical.exploitdb_cve_map`, nor in the raw
+`staging.exploitdb_raw` codes or descriptions (snapshot fetched
+2026-08-07; the Exploit-DB refresh has not run). Its rows have
+`exploit_published_by_asof = False` and `days_to_first_exploit = null` at
+both landmarks. Exploit features are Cox inputs, not fuzzy inputs, so they
+contributed nothing to its `cox_risk_pct` either. The 99.5 → 99.8 move
+comes from the time-varying Cox inputs: `landmark_day` and the EPSS
+features (`epss_pct_now` went from 0.61 to 0.76). It was not decomposed
+further.
+
+### Monotonicity defect: priority is not monotone in EPSS (2026-10-23)
+
+**The shipped design's monotonicity check varied only `cox_risk`.**
+`fuzzy_layer.worst_cox_monotonicity_step`, which `design.py` enforces,
+sweeps `cox_risk` on a dense grid with EPSS, the CVSS band and
+missingness held fixed. It never varies any other input. "Monotone" in
+"Changes from the brief" above therefore means monotone *in cox_risk*.
+**Priority is demonstrably non-monotone in EPSS.** R13 ("epss is High →
+Medium") is the largest cause (observation 4 above), but not the only one.
+
+**Sweep.** `python -m scripts.eda.fuzzy_monotonicity` re-scores the frozen
+`models/fuzzy_config.json` (nothing is changed). It moves each input over
+its full range in steps of 0.001 (0.01 for CVSS), with the other inputs
+held at representative values:
+- `cox_risk` ∈ {0.10, 0.30, 0.50, 0.70, 0.85, 0.95, 0.99}
+- `epss` ∈ {0.05, 0.13, 0.20, 0.30, 0.45, 0.70, 0.95}
+- CVSS ∈ {2.0, 5.5, 8.0, 9.5, missing}
+- blindspot ∈ {−0.30, 0, 0.24, 0.50, 0.80}
+
+It runs in two modes. *Shipped*: blindspot = cox_risk − epss, as
+`model_inputs` builds it. *Free*: blindspot held fixed, which is the only
+way to sweep blindspot itself. The grid is representative, not exhaustive.
+
+| Input swept | Lines | Non-monotone | Worst single step |
+|---|---|---|---|
+| `cox_risk` (shipped / free) | 35 / 175 | **0 / 0** | 0 |
+| `epss` (shipped) | 35 | **30** | −0.224 |
+| `epss` (free) | 175 | **152** | −0.224 |
+| CVSS, present, 0–10 | 49 | **0** | 0 |
+| blindspot (free), −1 to +1 | 245 | **0** | 0 |
+
+**Every non-monotone region is in EPSS.** In each case below, raising
+EPSS lowers priority. Drops are peak-to-trough over the falling interval.
+
+1. **R13 (EPSS entering High, about 0.163 → 0.277, up to 0.342).** Drops
+   of up to **9.86 points**. The worst lines have `cox_risk` ≥ 0.85 at any
+   CVSS, or lower `cox_risk` with Critical CVSS. Priority recovers once
+   EPSS reaches VeryHigh (0.4174). Disabling R13 removes most of the
+   non-monotone lines: 30 → 11 shipped, 152 → 40 free.
+2. **EPSS-capped Critical crossover, R04 → R11 (with R12 → R10 on the High
+   consequent).** EPSS about 0.277 → 0.347, at `cox_risk` 0.70–0.85, any
+   CVSS. Drops of up to **3.1 points** with R13 disabled. This is
+   mechanism 1 of "Changes from the brief" (two rules on adjacent levels
+   with one consequent, max(fading, rising)), but in the EPSS dimension.
+   R04 and R12 use EPSS **High**, not a cumulative "or above" term, so
+   they fade while R11 and R10 (EPSS VeryHigh) rise. The fix applied for
+   `cox_risk` was never applied to EPSS.
+3. **Blindspot coupling through R03 (shipped mode only).** With Critical
+   CVSS at `cox_risk` 0.3–0.7, raising EPSS lowers blindspot (= cox − epss)
+   and fades R03 ("blindspot ModelHigher AND cvss Critical → Critical").
+   Drops of up to **7.3 points** (cox 0.5, EPSS 0 → 0.24) and 3.8 points
+   (cox 0.3, EPSS 0 → 0.06) with R13 disabled. This doesn't occur in free
+   mode, so the cause is that blindspot is derived from EPSS.
+4. Small residual steps: up to 0.10 points (EPSS 0.277 → 0.301, cox 0.3;
+   R10/R13/R17) and up to 0.04 points (EPSS 0.268 → 0.277).
+
+**`cvss_missing` is crisp**, so it has no order to be monotone in. For the
+record:
+- A missing score gives up to **10.5 points more** than a present
+  non-Critical score (2.0, 5.5 or 8.0). R06's cut ("… AND cvss is not
+  Critical → VeryLow") applies only to present scores.
+- A missing score gives up to **10.4 points less** than a present Critical
+  score (no Critical boost).
+- So "unknown severity" can rank above a present High (8.0) score at low
+  `cox_risk`/EPSS.
+
+**Not fixed.** This is recorded as an input to the redesign. That happens
+as a registered experiment under `docs/holdout_protocol.md`, not as an ad
+hoc change. A redesign's acceptance check should sweep *every* input, as
+this script does, including blindspot's coupling to EPSS.

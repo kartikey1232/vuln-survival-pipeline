@@ -362,14 +362,45 @@ time-dependent AUC gain at every horizon.
   place than the flexible tree-based learners do, so it had less to lose
   when that artifact was removed). All numbers in this document are
   post-fix.
-- **Validation-vs-test bias asymmetry, not fully resolved**: even after the
-  fix, CVSS-presence still correlates with the label — positives are less
-  likely to be missing a CVSS score than negatives, by 2.8pp on train and
-  6.2pp on test (both now under the pre-fix 20.9pp/6.0pp gaps, but not
-  zero). Because the gap is larger in the earlier (fit/val) era than in the
-  test era, validation-set model selection somewhat over-credits this
-  residual signal relative to what test shows — treat validation C-index as
-  optimistic versus test, always report test numbers as the real answer.
+- **Residual CNA-CVSS presence gap, not fully resolved.** *[Corrected
+  2026-10-23; see `docs/STATUS.md`, "Correction: residual CNA-CVSS
+  presence gap".]* Even after the fix, CNA-CVSS presence still differs
+  between positives and negatives, and **the direction is opposite on the
+  two splits.** The figures below are recomputed at **landmark-row level**
+  from `landmark_v20260922` (`scripts/eda/enrichment_gap.py`). The gap is
+  negatives' `cvss_cna_missing` rate minus positives':
+  - **Train: −2.76pp.** Positives are *more* likely than negatives to be
+    missing a CNA-CVSS score (44.0% vs 41.2%; 268,944 rows, 441 positive).
+  - **Test: +6.23pp.** Positives are *less* likely than negatives to be
+    missing one (16.0% vs 22.3%; 178,756 rows, 268 positive).
+
+  The pre-fix figures under the first-pass `source != nvd@nist.gov` rule
+  are verified at the same level: **train +20.93pp** and **test +5.96pp**,
+  both with positives *less* often missing. **The rule therefore reduced
+  the CNA-CVSS gap on train** (and reversed its direction) **and did not
+  reduce it on test** (5.96 → 6.23pp). For `primary_cwe_id` it reduced the
+  gap on both splits: train +18.98 → −5.36pp (reversed), test +9.07 →
+  +4.50pp. The full table is in `docs/STATUS.md`.
+
+  The train gap is smaller in magnitude than the test gap and runs the
+  other way. It therefore gives no support to the earlier claim that
+  validation-set selection over-credits this signal relative to test, and
+  this figure does not establish whether validation C-index is optimistic
+  relative to test. (Train here means all pre-2025 rows, fit plus val. The
+  validation period's own gap has not been computed.) Test numbers remain
+  the ones to report.
+
+  > **Original wording (superseded, kept for the record):** "even after the
+  > fix, CVSS-presence still correlates with the label — positives are less
+  > likely to be missing a CVSS score than negatives, by 2.8pp on train and
+  > 6.2pp on test (both now under the pre-fix 20.9pp/6.0pp gaps, but not
+  > zero). Because the gap is larger in the earlier (fit/val) era than in the
+  > test era, validation-set model selection somewhat over-credits this
+  > residual signal relative to what test shows — treat validation C-index as
+  > optimistic versus test, always report test numbers as the real answer."
+  > The train direction is wrong: on train, positives are *more* likely to
+  > be missing. "Larger in the earlier era" is also wrong, since
+  > |−2.76| < 6.23. The original also gave no aggregation level.
 - **`disclosure@vulncheck.com` as a CNA**: this source has the highest
   positive rate (6.5%) among the top-20 CNAs by positive count in train
   (n=46 CVEs, 3 positives). VulnCheck is a vulnerability-intelligence vendor

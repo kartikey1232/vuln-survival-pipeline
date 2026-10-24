@@ -27,6 +27,14 @@ from scripts.common.manifest import already_downloaded, upsert_manifest
 logger = get_logger(__name__, category="download")
 
 
+def catalog_asof(payload: dict) -> date:
+    """The catalog's own as-of date (its `dateReleased`): KEV listings are
+    known through this date and no later. Recorded as the manifest row's
+    snapshot_date; label cutoffs derive from it
+    (scripts/features/build_landmark_dataset.py::kev_asof_date)."""
+    return datetime.fromisoformat(payload["dateReleased"]).date()
+
+
 def _parse_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -70,6 +78,7 @@ async def _run() -> None:
                     row_count=len(vulns),
                     status="verified",
                     http_status=result.http_status,
+                    snapshot_date=catalog_asof(payload),
                 )
 
                 for vuln in vulns:

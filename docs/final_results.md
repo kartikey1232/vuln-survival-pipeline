@@ -397,13 +397,46 @@ calibration" above).
     shift (together with Cox being in-sample on validation) is large enough
     to break calibration transfer from validation to test, not only to
     move percentiles (`docs/robustness.md` §3).
-11. **Residual enrichment bias.** Even after the own-CNA source rule,
-    CVSS presence still differs between positives and negatives (2.8pp
-    train / 6.2pp test). Validation C-index runs optimistic relative to
-    test. *Tested:* restricting test to rows with a CNA CVSS score leaves
-    Cox's advantage over EPSS intact (ΔC-index +0.094, ΔR@10% +0.178, both
-    excluding zero), so CVSS presence is not what drives it. The validation
-    optimism caveat stands. `disclosure@vulncheck.com`, a threat-intel
+11. **Residual enrichment bias.** *[Corrected 2026-10-23; see
+    `docs/STATUS.md`, "Correction: residual CNA-CVSS presence gap".]* Even
+    after the own-CNA source rule, CNA-CVSS presence still differs between
+    positives and negatives, and **in opposite directions on the two
+    splits** (landmark-row level; gap = negatives' missing rate minus
+    positives'):
+    - **Train: −2.76pp.** Positives are *more* often missing a CNA-CVSS
+      score (44.0% vs 41.2%).
+    - **Test: +6.23pp.** Positives are *less* often missing one (16.0% vs
+      22.3%).
+
+    Before the own-CNA rule (first-pass `source != nvd@nist.gov`, verified
+    at the same level), the gap was **train +20.93pp** and **test
+    +5.96pp**, with positives *less* often missing on both. **The rule
+    reduced the CNA-CVSS gap on train** (and reversed its direction) **and
+    did not reduce it on test.** For `primary_cwe_id` it reduced the gap on
+    both splits: train +18.98 → −5.36pp (reversed), test +9.07 → +4.50pp.
+
+    **Validation optimism from this gap is not established.** It rested on
+    the train gap being the larger one and in the same direction as test,
+    and it is neither. *Tested:* restricting test to rows with a CNA CVSS
+    score leaves Cox's advantage over EPSS intact (ΔC-index +0.094,
+    ΔR@10% +0.178, both excluding zero), so CVSS presence is not what
+    drives it. This correction does not affect the other reasons
+    validation numbers can differ from test: Cox is in-sample on
+    validation (limitation 1). XGBoost-AFT's validation-to-test drop
+    (selected-config validation C-index 0.913, test 0.785) is attributed to
+    overfitting of a flexible model selected on validation, not to residual
+    enrichment signal. That attribution has not been tested separately, and
+    the mis-encoded validation inputs (limitation 2) may contribute.
+
+    > **Original wording (superseded, kept for the record):** "Even after
+    > the own-CNA source rule, CVSS presence still differs between
+    > positives and negatives (2.8pp train / 6.2pp test). Validation
+    > C-index runs optimistic relative to test. … The validation optimism
+    > caveat stands." The train sign was missing and is negative. The
+    > optimism claim rested on the wrong premise. The aggregation level
+    > was not stated.
+
+    `disclosure@vulncheck.com`, a threat-intel
     vendor acting as CNA, is 46 CVEs in train but **2,564 CVEs (26 row-level
     events) on test**. *Tested:* excluding them leaves Cox's advantage intact
     (`docs/robustness.md` §1).

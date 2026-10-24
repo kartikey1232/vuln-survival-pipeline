@@ -75,6 +75,19 @@ def headline_metrics(test_df, scores: dict) -> dict:
     return out
 
 
+def post_freeze(test_df, train_df, scores: dict, cox_model, X_cox, y_train, figure_path) -> dict:
+    """docs/final_results.md's time-dependent AUC, Brier/IPA/calibration
+    and XGBoost-AFT-vs-EPSS numbers for one set of frozen-model scores."""
+    log_with_fields(logger, logging.INFO, "post-freeze metrics, corrected encoding")
+    return {
+        "time_dependent_auc": step1_time_dependent_auc(test_df, scores, y_train),
+        "cox_brier_calibration": step2_cox_brier_and_calibration(test_df, train_df, cox_model, X_cox, y_train,
+                                                                 figure_path),
+        "xgb_cindex_vs_epss": step3_xgb_cindex_vs_epss(test_df, scores),
+        "censoring_from_test_sensitivity": censoring_sensitivity(test_df, scores, cox_model, X_cox),
+    }
+
+
 def main():
     cfg = get_config()
     models_dir = cfg.project_root / "models"
@@ -92,13 +105,9 @@ def main():
         log_with_fields(logger, logging.INFO, "headline metrics", encoding=name)
         results[name] = headline_metrics(test_df, scores)
 
-    log_with_fields(logger, logging.INFO, "post-freeze metrics, corrected encoding")
-    results["corrected"]["time_dependent_auc"] = step1_time_dependent_auc(test_df, corrected, y_train)
-    results["corrected"]["cox_brier_calibration"] = step2_cox_brier_and_calibration(
-        test_df, train_df, cox_model, X_cox, y_train,
-        cfg.project_root / "docs" / "figures" / "calibration_90d_corrected_encoding.png")
-    results["corrected"]["xgb_cindex_vs_epss"] = step3_xgb_cindex_vs_epss(test_df, corrected)
-    results["corrected"]["censoring_from_test_sensitivity"] = censoring_sensitivity(test_df, corrected, cox_model, X_cox)
+    results["corrected"].update(post_freeze(
+        test_df, train_df, corrected, cox_model, X_cox, y_train,
+        cfg.project_root / "docs" / "figures" / "calibration_90d_corrected_encoding.png"))
 
     with open(cfg.project_root / "scratch" / "results_corrected_encoding.json", "w") as f:
         json.dump(results, f, indent=2, default=str)

@@ -108,18 +108,7 @@ def stats(t: pd.DataFrame) -> np.ndarray:
     ], dtype=float)
 
 
-def main():
-    cfg = get_config()
-    models_dir = cfg.project_root / "models"
-    _, test_df = _prep()
-    cox = frozen_cox_scores(test_df, models_dir)
-    recorded = json.loads((models_dir / "cox_final_metadata.json").read_text())[
-        "test_metrics_corrected_encoding"]["test_cindex"]
-    got = fast_concordance_index(test_df["event_time"].clip(lower=0.5).values, cox,
-                                 test_df["composite_event"].values.astype(int))
-    if abs(got - recorded) > 1e-9:
-        raise RuntimeError(f"frozen Cox C-index {got} != recorded corrected-encoding {recorded}")
-
+def lead_time_results(test_df: pd.DataFrame, cox: np.ndarray) -> tuple[dict, pd.DataFrame]:
     t = per_cve_table(test_df, cox)
     point = stats(t)
     samples = _bootstrap_rows(t["cve_id"].to_numpy(), lambda idx: stats(t.iloc[idx]), len(STAT_NAMES),
@@ -134,6 +123,22 @@ def main():
             "cox_given_caught": t.loc[t["cox_caught"], "cox_lead_days"].describe().to_dict(),
             "epss_given_caught": t.loc[t["epss_caught"], "epss_lead_days"].describe().to_dict()},
     }
+    return out, t
+
+
+def main():
+    cfg = get_config()
+    models_dir = cfg.project_root / "models"
+    _, test_df = _prep()
+    cox = frozen_cox_scores(test_df, models_dir)
+    recorded = json.loads((models_dir / "cox_final_metadata.json").read_text())[
+        "test_metrics_corrected_encoding"]["test_cindex"]
+    got = fast_concordance_index(test_df["event_time"].clip(lower=0.5).values, cox,
+                                 test_df["composite_event"].values.astype(int))
+    if abs(got - recorded) > 1e-9:
+        raise RuntimeError(f"frozen Cox C-index {got} != recorded corrected-encoding {recorded}")
+
+    out, t = lead_time_results(test_df, cox)
     t.to_csv(cfg.project_root / "scratch" / "lead_time_per_cve.csv", index=False)
     with open(cfg.project_root / "scratch" / "lead_time.json", "w") as f:
         json.dump(out, f, indent=2, default=str)

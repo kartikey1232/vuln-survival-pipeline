@@ -71,6 +71,9 @@ to follow; STATUS.md is the longer narrative.
 - `scripts/clean/` — raw → canonical
 - `scripts/features/build_landmark_dataset.py` — the feature/label build
   (this is the pipeline's core; read it before touching features)
+- `scripts/features/build_holdout_cohort.py` — the 2026 holdout cohort
+  (`training.holdout_2026`; same build, own window/cutoff; read
+  `docs/holdout_protocol.md` before evaluating anything on it)
 - `scripts/evaluate/` — shared bootstrap/metrics (`common.py`), fit/val/
   test splitting (`data_splits.py`), feature prep (`features.py`)
 - `scripts/models/{cox,rsf,xgboost_aft}.py` — the three candidate models
@@ -83,6 +86,9 @@ to follow; STATUS.md is the longer narrative.
 - `docs/final_results.md` — every corrected number for the report/deck in one
   place (start here for numbers)
 - `docs/model_comparison.md` — original-encoding model numbers (marked)
+- `docs/results_corrected_labels.md` — every test metric recomputed with the 18
+  KEV-relabelled test rows, beside the recorded value (generated; do not edit)
+- `docs/backups.md` — database dumps: path, sha256, verification
 - `docs/enrichment_leakage.md` — the leakage investigation writeup
 - `database/schema.sql` + `database/models.py` — must always match each
   other (schema.sql is authoritative for a fresh `vsp db init`; models.py

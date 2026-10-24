@@ -43,3 +43,6 @@ htmlcov/
 .coverage
 dist/
 build/
+
+# full-database dumps (pg_dump -Fc); never committed
+data/backups/*

@@ -111,9 +111,14 @@ Paired Cox − EPSS-alone (**bold** = interval excludes zero):
   few events.
 - **The 2024-07-01 fold is the weakest for both models**: Cox 0.804, EPSS
   0.621. Cox's *advantage* is largest there (+0.183). That window is the
-  validation period, where the residual CVSS-presence gap was largest
-  (`docs/STATUS.md`). Nothing here separates that from other differences
-  between periods.
+  validation period. *[Corrected 2026-10-23: this originally continued
+  "where the residual CVSS-presence gap was largest (`docs/STATUS.md`).
+  Nothing here separates that from other differences between periods."
+  The premise is false. The pre-2025 gap is −2.76pp (positives *more* often
+  missing), smaller than and opposite to test's +6.23pp, and the validation
+  period's own gap has not been computed. See `docs/STATUS.md`,
+  "Correction: residual CNA-CVSS presence gap".]* Nothing here explains
+  the fold's result.
 - **Test windows are six months long and hold 97–126 events each**, so
   intervals are wider than the headline's (268 events over ~20 months).
   Fold-to-fold differences are mostly within noise. The point is the sign

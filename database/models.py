@@ -20,6 +20,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     PrimaryKeyConstraint,
@@ -478,6 +479,62 @@ class TrainingDataset(Base):
     composite_event: Mapped[bool] = mapped_column(Boolean, nullable=False)
     event_type: Mapped[str | None] = mapped_column(Text)
     dataset_version: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    exported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class Holdout2026(Base):
+    """The 2026 holdout cohort. Mirrors database/schema.sql, including the
+    CHECK constraints. The CVE-overlap constraint against training_dataset
+    is a constraint trigger (training.reject_holdout_training_overlap) that
+    SQLAlchemy cannot express; it lives in schema.sql and migration
+    b7d41c2e9f30."""
+
+    __tablename__ = "holdout_2026"
+    __table_args__ = (
+        PrimaryKeyConstraint("cve_id", "checkpoint_day", "dataset_version"),
+        CheckConstraint("published_date BETWEEN DATE '2026-03-25' AND DATE '2026-09-21'",
+                        name="holdout_2026_published_window"),
+        CheckConstraint("as_of_date = published_date + checkpoint_day", name="holdout_2026_as_of_is_landmark"),
+        CheckConstraint("followup_days = observation_window_end - as_of_date AND followup_days >= 0",
+                        name="holdout_2026_followup"),
+        CheckConstraint("event_time >= 0 AND event_time <= followup_days", name="holdout_2026_event_within_followup"),
+        Index("idx_holdout_2026_version", "dataset_version"),
+        {"schema": "training"},
+    )
+
+    cve_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    checkpoint_day: Mapped[int] = mapped_column(Integer, nullable=False)
+    published_date: Mapped[date] = mapped_column(Date, nullable=False)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    epss_pct_now: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    epss_pct_7d_ago: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    epss_pct_7d_ago_missing: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    epss_pct_delta_7d: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    epss_pct_first: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    epss_pct_max_to_date: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    days_to_first_epss: Mapped[int | None] = mapped_column(Integer)
+    epss_model_version_at_asof: Mapped[str | None] = mapped_column(Text)
+    cvss_base_score: Mapped[float | None] = mapped_column(Numeric(3, 1))
+    attack_vector: Mapped[str | None] = mapped_column(Text)
+    attack_complexity: Mapped[str | None] = mapped_column(Text)
+    privileges_required: Mapped[str | None] = mapped_column(Text)
+    user_interaction: Mapped[str | None] = mapped_column(Text)
+    confidentiality_impact: Mapped[str | None] = mapped_column(Text)
+    integrity_impact: Mapped[str | None] = mapped_column(Text)
+    availability_impact: Mapped[str | None] = mapped_column(Text)
+    cvss_version: Mapped[str | None] = mapped_column(Text)
+    cvss_cna_missing: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    cwe_kev_rate_expanding: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    cna_kev_rate_expanding: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    exploit_published_by_asof: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    days_to_first_exploit: Mapped[int | None] = mapped_column(Integer)
+    epss_score_at_asof_raw: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    spans_version_transition: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    event_time: Mapped[int] = mapped_column(Integer, nullable=False)
+    composite_event: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    observation_window_end: Mapped[date] = mapped_column(Date, nullable=False)
+    followup_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    dataset_version: Mapped[str] = mapped_column(Text, nullable=False)
     exported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

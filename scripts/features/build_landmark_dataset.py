@@ -27,8 +27,9 @@ of:
      the training period, not past it.
 Every row ALSO gets a `spans_version_transition` flag: TRUE if
 [published_date, as_of_date] contains an EPSS model-version transition
-(2022-02-04 / 2023-03-07 / 2025-03-17 — see scripts/download/download_epss.py
-for how these were found). Flagged rows are NOT dropped from the table —
+(2022-02-04 / 2023-03-07 / 2025-03-17 / 2026-06-15 — see
+scripts/download/download_epss.py for how these were found; no study row
+can span 2026-06-15, the 2026 holdout cohort's can). Flagged rows are NOT dropped from the table —
 they're written with the flag set, so a later sensitivity analysis can
 query training.training_dataset without this filter — but the DEFAULT
 export (and every count reported by this script) excludes them.
@@ -86,7 +87,6 @@ STUDY_END = DATA_CUTOFF - timedelta(days=FOLLOWUP_DAYS)  # 2026-03-24
 
 # EPSS model-version transition dates, found by scanning every downloaded
 # file's #model_version header (see scripts/download/download_epss.py).
-VERSION_TRANSITIONS = [date(2022, 2, 4), date(2023, 3, 7), date(2025, 3, 17)]
 VERSION_BOUNDARIES = [
     (None, date(2022, 2, 4), "unversioned"),
     (date(2022, 2, 4), date(2023, 3, 7), "v2022.01.01"),
@@ -94,6 +94,8 @@ VERSION_BOUNDARIES = [
     (date(2025, 3, 17), date(2026, 6, 15), "v2025.03.14"),
     (date(2026, 6, 15), None, "v2026.06.15"),
 ]
+# every boundary is a transition; derived so the two lists cannot drift apart again
+VERSION_TRANSITIONS = [lo for lo, _, _ in VERSION_BOUNDARIES if lo is not None]
 
 # --- the ONLY columns permitted as model features in the export (STEP 1a) ---
 MODEL_FEATURE_COLUMNS = [
@@ -203,6 +205,49 @@ def _expanding_positive_rate(
     return numer, denom
 
 
+# --- ordering: every feature-affecting choice of "the first row" is made on
+# natural keys only, never on a surrogate id (BIGSERIAL columns such as
+# cvss_metric_id / cpe_product_id / staging_id), whose order reflects
+# insertion history, not the data. tests/test_features/test_ordering.py
+# fails if a feature path sorts on, selects or filters by one.
+
+# the CVE's own CNA: sourceIdentifier of its newest staged NVD payload. The
+# trailing sourceIdentifier key only matters if two payloads share a
+# fetched_at (none do today); it makes the pick depend on content, not on
+# which row was inserted first.
+LATEST_SOURCE_IDENTIFIER_SQL = (
+    "SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
+    "FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC, payload->>'sourceIdentifier'"
+)
+
+CVSS_VALUE_COLUMNS = [
+    "cvss_base_score", "attack_vector", "attack_complexity", "privileges_required", "user_interaction",
+    "confidentiality_impact", "integrity_impact", "availability_impact",
+]
+
+
+def pick_own_cna_cvss(cvss_cna: pd.DataFrame, cvss_preference_order: list[str]) -> pd.DataFrame:
+    """One own-CNA CVSS row per CVE: the most preferred version (the order
+    clean_nvd.py uses for is_primary, 3.1 > 3.0 > 4.0 > 2.0), ties between
+    metrics of that version broken by the metric's own values, so the result
+    does not depend on input row order. groupby.first() takes each column's
+    first non-null value, as before."""
+    version_rank = {v: i for i, v in enumerate(cvss_preference_order)}
+    df = cvss_cna.assign(_rank=cvss_cna["cvss_version"].map(version_rank).fillna(len(version_rank)))
+    df = df.sort_values(["cve_id", "_rank", *CVSS_VALUE_COLUMNS], kind="mergesort", na_position="last")
+    return df.groupby("cve_id", as_index=False).first().drop(columns="_rank")
+
+
+def pick_primary_vendor(cpe: pd.DataFrame) -> pd.DataFrame:
+    """(cve_id, primary_vendor): the alphabetically first normalized
+    (vendor, product) of the CVE's CPE entries. Not a model feature (CPE is
+    NVD enrichment; see docs/enrichment_leakage.md), but it is stored in
+    features.static_features. It used to be the entry with the lowest
+    cpe_product_id, i.e. whichever was inserted first."""
+    df = cpe.sort_values(["cve_id", "vendor_normalized", "product_normalized"], kind="mergesort", na_position="last")
+    return (df.groupby("cve_id", as_index=False).first()[["cve_id", "vendor_normalized"]]
+            .rename(columns={"vendor_normalized": "primary_vendor"}))
+
 
 def _load_base_cve_table(engine, cvss_preference_order: list[str]) -> pd.DataFrame:
     """One row per CVE in canonical.cve, with the static features that
@@ -228,11 +273,7 @@ def _load_base_cve_table(engine, cvss_preference_order: list[str]) -> pd.DataFra
     )
     kev = pd.read_sql("SELECT cve_id, date_added FROM canonical.kev", engine, parse_dates=["date_added"])
 
-    source_id = pd.read_sql(
-        "SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
-        "FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC",
-        engine,
-    )
+    source_id = pd.read_sql(f"SELECT cve_id, source_identifier FROM ({LATEST_SOURCE_IDENTIFIER_SQL}) cs", engine)
 
     # STRICT rule: accept a CVSS/CWE entry only if its source EQUALS the
     # CVE's own sourceIdentifier (the CNA that owns/reported it) — not
@@ -248,22 +289,16 @@ def _load_base_cve_table(engine, cvss_preference_order: list[str]) -> pd.DataFra
         "cm.attack_complexity, cm.privileges_required, cm.user_interaction, cm.confidentiality_impact, "
         "cm.integrity_impact, cm.availability_impact "
         "FROM canonical.cvss_metric cm "
-        "JOIN (SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
-        "      FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC) cs "
+        f"JOIN ({LATEST_SOURCE_IDENTIFIER_SQL}) cs "
         "  ON cs.cve_id = cm.cve_id AND cs.source_identifier = cm.source",
         engine,
     )
-    # among own-CNA-sourced rows only, pick one per CVE using the same
-    # version preference order clean_nvd.py uses for is_primary (3.1 > 3.0 > 4.0 > 2.0)
-    version_rank = {v: i for i, v in enumerate(cvss_preference_order)}
-    cvss_cna["_rank"] = cvss_cna["cvss_version"].map(version_rank).fillna(len(version_rank))
-    cvss_cna = cvss_cna.sort_values("_rank").groupby("cve_id", as_index=False).first().drop(columns="_rank")
+    cvss_cna = pick_own_cna_cvss(cvss_cna, cvss_preference_order)
 
     cwe_map = pd.read_sql(
         "SELECT cwm.cve_id, cwm.cwe_id "
         "FROM canonical.cve_cwe_map cwm "
-        "JOIN (SELECT DISTINCT ON (cve_id) cve_id, payload->>'sourceIdentifier' AS source_identifier "
-        "      FROM staging.nvd_cve_raw ORDER BY cve_id, fetched_at DESC) cs "
+        f"JOIN ({LATEST_SOURCE_IDENTIFIER_SQL}) cs "
         "  ON cs.cve_id = cwm.cve_id AND cs.source_identifier = cwm.source",
         engine,
     )
@@ -272,13 +307,8 @@ def _load_base_cve_table(engine, cvss_preference_order: list[str]) -> pd.DataFra
         .rename(columns={"cwe_id": "primary_cwe_id"})
     )
 
-    cpe = pd.read_sql(
-        "SELECT cpe_product_id, cve_id, vendor_normalized, product_normalized FROM canonical.cpe_product", engine
-    )
-    primary_vendor = (
-        cpe.sort_values("cpe_product_id").groupby("cve_id", as_index=False).first()
-        [["cve_id", "vendor_normalized"]].rename(columns={"vendor_normalized": "primary_vendor"})
-    )
+    cpe = pd.read_sql("SELECT cve_id, vendor_normalized, product_normalized FROM canonical.cpe_product", engine)
+    primary_vendor = pick_primary_vendor(cpe)
     vendor_count = cpe.groupby("cve_id")["vendor_normalized"].nunique().rename("vendor_count")
     product_count = cpe.groupby("cve_id")["product_normalized"].nunique().rename("product_count")
 
@@ -308,17 +338,19 @@ def _load_epss_timeline(engine, cve_ids: pd.Series) -> pd.DataFrame:
     set in pandas — avoids a huge SQL IN(...) clause (see clean_epss.py's
     docstring for why that blows Postgres's bound-parameter limit here).
 
-    Sorted by snapshot_date ALONE (not [cve_id, snapshot_date]) — required
+    Sorted by snapshot_date FIRST (not [cve_id, snapshot_date]) — required
     by pd.merge_asof, which needs its "on" column globally sorted even when
     `by=` is used for grouped matching (verified: `by=` does NOT relax this
-    to within-group sorting). A stable global sort by snapshot_date still
-    leaves each cve_id's own rows in chronological relative order, which is
-    all groupby-based cummax/first-per-group operations below need."""
+    to within-group sorting). Sorting by (snapshot_date, cve_id) leaves each
+    cve_id's own rows in chronological order, which is all the groupby-based
+    cummax/first-per-group operations below need, and makes the frame's
+    order a function of its content ((cve_id, snapshot_date) is the
+    table's primary key) rather than of the order Postgres returned rows in."""
     epss = pd.read_sql(
         "SELECT cve_id, snapshot_date, epss_score, percentile FROM canonical.epss_timeline", engine,
         parse_dates=["snapshot_date"],
     )
-    epss = epss[epss["cve_id"].isin(set(cve_ids))].sort_values("snapshot_date", kind="mergesort")
+    epss = epss[epss["cve_id"].isin(set(cve_ids))].sort_values(["snapshot_date", "cve_id"], kind="mergesort")
     epss["model_version"] = _version_at(epss["snapshot_date"])
     epss["percentile_cummax"] = epss.groupby("cve_id")["percentile"].cummax()
     return epss
@@ -440,13 +472,19 @@ def round_to_storage(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build(cfg=None, train_test_cutoff: date = TRAIN_TEST_CUTOFF) -> pd.DataFrame:
+def build(cfg=None, train_test_cutoff: date = TRAIN_TEST_CUTOFF, *, study_start: date = STUDY_START,
+          study_end: date = STUDY_END, data_cutoff: date = DATA_CUTOFF) -> pd.DataFrame:
     """In-memory build of every (cve, landmark) row. `train_test_cutoff`
     only sets the split, condition 3 and train-label censoring; every
     feature is computed as of each row's own as_of_date and does not depend
     on it. Passing STUDY_START makes every row "test" (no condition-3 drops,
     every label observed to DATA_CUTOFF), which is how
-    scripts/evaluate/rolling_origin.py gets the full grid for other cutoffs."""
+    scripts/evaluate/rolling_origin.py gets the full grid for other cutoffs.
+
+    `study_start`/`study_end` (publication window, inclusive) and
+    `data_cutoff` (test-label censoring) default to the frozen study's; the
+    2026 holdout cohort passes its own (scripts/features/build_holdout_cohort.py).
+    The feature rules are the same either way."""
     cfg = cfg or get_config()
     engine = get_engine()
     landmarks = cfg.checkpoints.days
@@ -454,7 +492,7 @@ def build(cfg=None, train_test_cutoff: date = TRAIN_TEST_CUTOFF) -> pd.DataFrame
 
     base = _load_base_cve_table(engine, cfg.cvss.preference_order)
 
-    study = base[(base["published_date"].dt.date >= STUDY_START) & (base["published_date"].dt.date <= STUDY_END)].copy()
+    study = base[(base["published_date"].dt.date >= study_start) & (base["published_date"].dt.date <= study_end)].copy()
 
     candidates = generate_candidate_grid(study, landmarks, train_test_cutoff)
 
@@ -536,7 +574,7 @@ def build(cfg=None, train_test_cutoff: date = TRAIN_TEST_CUTOFF) -> pd.DataFrame
     encode("primary_cwe_id", "cwe_kev_rate_expanding")
     encode("source_identifier", "cna_kev_rate_expanding")
 
-    candidates = compute_labels(candidates, train_test_cutoff, DATA_CUTOFF)
+    candidates = compute_labels(candidates, train_test_cutoff, data_cutoff)
     return candidates
 
 

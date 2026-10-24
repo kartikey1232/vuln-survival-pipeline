@@ -20,7 +20,6 @@ app = typer.Typer(
 
 download_app = typer.Typer(help="Download raw data from NVD, EPSS, KEV, ExploitDB, CWE.")
 clean_app = typer.Typer(help="Clean/normalize raw data into the canonical schema.")
-reconstruct_app = typer.Typer(help="Reconstruct derived timelines (EPSS).")
 features_app = typer.Typer(help="Build static/temporal/derived features.")
 labels_app = typer.Typer(help="Build survival-analysis labels.")
 export_app = typer.Typer(help="Export the final training dataset.")
@@ -28,7 +27,6 @@ db_app = typer.Typer(help="Database schema management.")
 
 app.add_typer(download_app, name="download")
 app.add_typer(clean_app, name="clean")
-app.add_typer(reconstruct_app, name="reconstruct")
 app.add_typer(features_app, name="features")
 app.add_typer(labels_app, name="labels")
 app.add_typer(export_app, name="export")
@@ -146,19 +144,6 @@ def clean_all() -> None:
     main()
 
 
-# --- reconstruct ---------------------------------------------------------------
-
-
-@reconstruct_app.command("epss")
-def reconstruct_epss(
-    cve_id: str = typer.Option(None, help="Limit to a single CVE (debugging)"),
-    batch_size: int = typer.Option(2000, help="CVE-ID chunk size for vectorized processing"),
-) -> None:
-    from scripts.epss_reconstruct.reconstruct_epss_timeline import main
-
-    main(cve_id=cve_id, batch_size=batch_size)
-
-
 # --- features ---------------------------------------------------------------
 
 
@@ -256,8 +241,8 @@ def db_migrate(message: str = typer.Option(..., help="Alembic revision message")
 
 @app.command("pipeline-run-all")
 def pipeline_run_all(
-    from_stage: str = typer.Option("download", help="download|clean|reconstruct|features|labels|export"),
-    to_stage: str = typer.Option("export", help="download|clean|reconstruct|features|labels|export"),
+    from_stage: str = typer.Option("download", help="download|clean|features|labels|export"),
+    to_stage: str = typer.Option("export", help="download|clean|features|labels|export"),
 ) -> None:
     _not_yet_implemented("pipeline-run-all", "the phase after export lands (Phase 7+)")
 
