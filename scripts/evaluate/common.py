@@ -43,6 +43,7 @@ logger = get_logger(__name__, category="evaluate")
 
 DEFAULT_BUDGETS = (0.01, 0.05, 0.10)
 DEFAULT_SEED = 20260922
+CI_PERCENTILES = (2.5, 97.5)  # a 95% percentile interval
 
 
 @dataclass
@@ -153,7 +154,7 @@ def _summarize(point: float, samples) -> BootstrapResult:
     arr = arr[~np.isnan(arr)]
     return BootstrapResult(
         point_estimate=float(point), mean=float(np.mean(arr)),
-        ci_lower=float(np.percentile(arr, 2.5)), ci_upper=float(np.percentile(arr, 97.5)),
+        ci_lower=float(np.percentile(arr, CI_PERCENTILES[0])), ci_upper=float(np.percentile(arr, CI_PERCENTILES[1])),
         n_resamples=len(arr),
     )
 
@@ -161,7 +162,7 @@ def _summarize(point: float, samples) -> BootstrapResult:
 def _summarize_diff(point_diff: float, samples) -> dict:
     arr = np.asarray(samples, dtype=float)
     arr = arr[~np.isnan(arr)]
-    ci_lower, ci_upper = float(np.percentile(arr, 2.5)), float(np.percentile(arr, 97.5))
+    ci_lower, ci_upper = (float(np.percentile(arr, q)) for q in CI_PERCENTILES)
     return {
         "point_diff": float(point_diff), "mean_diff": float(np.mean(arr)),
         "ci_lower": ci_lower, "ci_upper": ci_upper,

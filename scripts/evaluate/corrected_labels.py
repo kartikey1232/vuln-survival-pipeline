@@ -19,16 +19,21 @@ Two passes, each in its own process:
                           files, then writes the corrected-vs-recorded
                           comparison (every number, its difference, and
                           every significance-boundary crossing) to
-                          scratch/corrected_labels/comparison.json and
+                          results/corrected_labels/comparison.json and
                           docs/results_corrected_labels.md.
 
 Not re-run: the RSF seed-variance study (RSF refits are not reproducible,
 so a re-run would mix label effects with run-to-run noise) and the
 original-encoding numbers (superseded).
 
-Writes scratch/corrected_labels/{stored,corrected}.json; the corrected
-pass also writes docs/figures/calibration_90d{,_calibrated}_corrected_labels.png
-and scratch/corrected_labels/lead_time_per_cve_corrected.csv.
+Writes results/corrected_labels/{stored,corrected}.json, which are
+committed: corrected.json is the record (`vsp results` reads it). Each
+carries a provenance block naming the commit it was generated at, and `run`
+refuses to start on a working tree with uncommitted changes to tracked
+files, so that commit is the code that produced it. Checkpoints and logs go
+to scratch/corrected_labels/. The corrected pass also writes
+docs/figures/calibration_90d{,_calibrated}_corrected_labels.png and
+scratch/corrected_labels/lead_time_per_cve_corrected.csv.
 
 Usage: python -m scripts.evaluate.corrected_labels {run --labels stored|corrected | report}
 """
@@ -38,7 +43,9 @@ from __future__ import annotations
 import json
 import logging
 import pickle
+import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -47,7 +54,7 @@ from config.config_schema import get_config
 from scripts.common.logging_utils import get_logger, log_with_fields
 from scripts.evaluate import calibration
 from scripts.evaluate.budget_equivalence import budget_results
-from scripts.evaluate.common import fast_concordance_index, survival_array
+from scripts.evaluate.common import CI_PERCENTILES, DEFAULT_SEED, fast_concordance_index, survival_array
 from scripts.evaluate.corrected_encoding import METADATA_FILES, MODELS, headline_metrics, post_freeze
 from scripts.evaluate.corrected_labels_report import render
 from scripts.evaluate.cox_trajectory_ablation import cox_trajectory_ablation
@@ -64,12 +71,15 @@ from scripts.evaluate.rolling_origin import (
 )
 from scripts.evaluate.sensitivity import evaluate_subsets, frozen_cox_scores, load_test_aug
 from scripts.evaluate.stale_reruns import xgb_trajectory_ablation
+from scripts.features.build_landmark_dataset import DATA_CUTOFF, STUDY_END, TRAIN_TEST_CUTOFF
 from scripts.fuzzy.evaluate_fuzzy import frozen_config, test_results
 from scripts.fuzzy.risk_percentile import OUTPUT_FILENAMES
 
 logger = get_logger(__name__, category="evaluate")
 
-OUT_SUBDIR = Path("scratch") / "corrected_labels"
+OUT_SUBDIR = Path("scratch") / "corrected_labels"  # checkpoints, logs, per-CVE CSVs
+RECORD_SUBDIR = Path("results") / "corrected_labels"  # committed outputs
+N_RESAMPLES = 200  # every analysis here uses common.py's default
 
 
 def relabel(df: pd.DataFrame, labels: str, *, expect: int | None = None) -> pd.DataFrame:
@@ -84,8 +94,19 @@ def relabel(df: pd.DataFrame, labels: str, *, expect: int | None = None) -> pd.D
 
 
 def population(test_df: pd.DataFrame) -> dict:
+    """Counts, plus the test set's definition: its publication window and
+    the date labels are observed to (checked against the rows)."""
     ev = test_df["composite_event"].astype(bool)
+    published = pd.to_datetime(test_df["as_of_date"]) - pd.to_timedelta(test_df["landmark_day"].astype(int), unit="D")
+    if published.min().date() < TRAIN_TEST_CUTOFF or published.max().date() > STUDY_END:
+        raise RuntimeError(f"test rows published {published.min().date()}..{published.max().date()}, "
+                           f"outside {TRAIN_TEST_CUTOFF}..{STUDY_END}")
+    observed_to = (pd.to_datetime(test_df["as_of_date"]) + pd.to_timedelta(test_df["event_time"], unit="D"))[~ev]
+    if observed_to.max().date() != DATA_CUTOFF:
+        raise RuntimeError(f"censored test rows end at {observed_to.max().date()}, not {DATA_CUTOFF}")
     return {
+        "publication_window": [str(TRAIN_TEST_CUTOFF), str(STUDY_END)],
+        "observation_cutoff": str(DATA_CUTOFF),
         "n_rows": len(test_df), "n_cves": int(test_df["cve_id"].nunique()), "n_events": int(ev.sum()),
         "n_event_cves": int(test_df.loc[ev, "cve_id"].nunique()),
         "n_events_within_90d": int((ev & (test_df["event_time"] <= 90)).sum()),
@@ -108,16 +129,36 @@ def _check_frozen_models(test_stored: pd.DataFrame, scores: dict, models_dir: Pa
             raise RuntimeError(f"{m}: frozen model gives {got} on stored labels, recorded {recorded}")
 
 
+def provenance(root: Path, labels: str) -> dict:
+    """The commit this pass runs at. Refuses uncommitted changes to tracked
+    files (untracked/ignored files such as .env and data/ cannot change
+    the code), so the commit is the code."""
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    dirty = git("status", "--porcelain", "--untracked-files=no")
+    if dirty:
+        raise RuntimeError(f"uncommitted changes to tracked files; commit them first:\n{dirty}")
+    lo, hi = CI_PERCENTILES
+    return {"labels": labels, "git_commit": git("rev-parse", "HEAD"),
+            "git_commit_date": git("show", "-s", "--format=%cI", "HEAD"),
+            "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
+            "seed": DEFAULT_SEED, "n_resamples": N_RESAMPLES, "ci_level": (hi - lo) / 100}
+
+
 def run(labels: str) -> dict:
     """Stages are checkpointed to scratch/corrected_labels/<labels>.partial.json
-    as they finish, so a re-run after a failure resumes at the failed stage."""
+    as they finish, so a re-run after a failure resumes at the failed stage
+    (only at the same commit)."""
     cfg = get_config()
     root = cfg.project_root
     models_dir = root / "models"
     out_dir = root / OUT_SUBDIR
     out_dir.mkdir(parents=True, exist_ok=True)
+    record_dir = root / RECORD_SUBDIR
+    record_dir.mkdir(parents=True, exist_ok=True)
     fig_dir = root / "docs" / "figures" if labels == "corrected" else Path(tempfile.mkdtemp())
     partial = out_dir / f"{labels}.partial.json"
+    prov = provenance(root, labels)
 
     train_df, test_stored = _prep()
     test_df = relabel(test_stored, labels)
@@ -180,7 +221,9 @@ def run(labels: str) -> dict:
         "xgb_trajectory_ablation": lambda: xgb_trajectory_ablation(train_df, test_df),
         "headline": headline,
     }
-    out = json.loads(partial.read_text()) if partial.exists() else {"labels": labels}
+    out = json.loads(partial.read_text()) if partial.exists() else {"labels": labels, "provenance": prov}
+    if out.get("provenance", {}).get("git_commit") != prov["git_commit"]:
+        raise RuntimeError(f"{partial} was started at another commit; delete it to start over")
     for name, stage in stages.items():
         if name in out:
             log_with_fields(logger, logging.INFO, "stage already done", stage=name, labels=labels)
@@ -189,7 +232,8 @@ def run(labels: str) -> dict:
         out[name] = stage()
         partial.write_text(json.dumps(out, indent=2, default=str))
 
-    with open(out_dir / f"{labels}.json", "w") as f:
+    out["provenance"]["completed_at_utc"] = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    with open(record_dir / f"{labels}.json", "w") as f:
         json.dump(out, f, indent=2, default=str)
     partial.unlink()
     return out
@@ -285,10 +329,12 @@ def comparison_rows(recorded, corrected, path=()) -> list[dict]:
 def report() -> None:
     cfg = get_config()
     root = cfg.project_root
-    out_dir = root / OUT_SUBDIR
+    out_dir = root / RECORD_SUBDIR
     recorded = _norm(recorded_results(root))
     stored = _norm(json.loads((out_dir / "stored.json").read_text()))
     corrected = _norm(json.loads((out_dir / "corrected.json").read_text()))
+    if stored["provenance"]["git_commit"] != corrected["provenance"]["git_commit"]:
+        raise RuntimeError("stored and corrected passes ran at different commits")
 
     reproduction = {}
     for name in RECORDED:
