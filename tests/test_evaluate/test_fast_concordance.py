@@ -78,15 +78,21 @@ def test_matches_lifelines_large_synthetic_with_heavy_ties():
 @pytest.fixture(scope="module")
 def real_test_data():
     import pandas as pd
+    from sqlalchemy.exc import OperationalError
+
     from database.engine import get_engine
 
-    engine = get_engine()
-    df = pd.read_sql(
-        "SELECT cve_id, event_time, composite_event, epss_score_at_asof_raw, epss_pct_now "
-        "FROM training.training_dataset "
-        "WHERE dataset_version = 'landmark_v20260922' AND as_of_date >= '2025-01-01'",
-        engine,
-    )
+    try:
+        df = pd.read_sql(
+            "SELECT cve_id, event_time, composite_event, epss_score_at_asof_raw, epss_pct_now "
+            "FROM training.training_dataset "
+            "WHERE dataset_version = 'landmark_v20260922' AND as_of_date >= '2025-01-01'",
+            get_engine(),
+        )
+    except OperationalError as exc:
+        pytest.skip(f"production database unavailable: {exc}")
+    if df.empty:
+        pytest.skip("production database has no landmark_v20260922 test rows")
     duration = df["event_time"].clip(lower=0.5).values.astype(float)
     event = df["composite_event"].values.astype(int)
     return df, duration, event

@@ -1605,3 +1605,51 @@ cohort evaluation. Also recorded there:
      for these CVEs, and only for the most recently published ones.
    - **Guard to add with any such feature:** filter to snapshot_date <=
      as_of, or to one model version.
+
+## `vsp results`: presentation output from the committed record (2026-10-27)
+
+**What it is.** `vsp results` prints the corrected-labels record as terminal
+tables for a live presentation (`scripts/results/`).
+
+- **Output:** a header line with the test-set definition, then the sections
+  headline, models, budget, rolling, blindspot, negatives, fuzzy and
+  sensitivity, then a footer naming the record and its commit. Each section
+  can be selected with `--section`.
+- **What it reads:** `results/corrected_labels/corrected.json` and nothing
+  else. It uses no database, network, config, `.env`, pandas or numpy, and
+  runs in about 0.06 s.
+- **No hardcoded numbers:** `tests/test_results/` fails on any numeric
+  literal in the formatting code other than a budget threshold.
+- **`vsp results --check`:**
+  - re-reads the record and verifies every printed cell against it through a
+    mapping written independently of the formatter;
+  - verifies that each ✓ appears exactly when the interval excludes zero
+    strictly, and that each verdict follows from its interval;
+  - runs in CI (`.github/workflows/ci.yml`) before the suite.
+
+**Decision: the record is committed and stamped with its commit.**
+
+- **Before:** `docs/results_corrected_labels.md` was generated from `scratch/`,
+  which is gitignored, so its source was not in the repository.
+- **Now:** `scripts/evaluate/corrected_labels.py` writes
+  `results/corrected_labels/{stored,corrected,comparison}.json`, which are
+  committed.
+- **Provenance block:** each pass records its commit, interval settings, the
+  publication window and the observation cutoff. A pass refuses to run with
+  uncommitted changes to tracked files.
+- **Regeneration:** both passes were re-run at `1faacd2` in a clean worktree.
+  - Every number is bit-identical to the 2026-10-24 record, and the figures
+    are byte-identical.
+  - The stored pass again reproduced all 1,163 recorded values exactly.
+  - The only doc change is a line naming the record and its commit.
+
+**CI.**
+
+- **Setup:** CI runs against a Postgres service with no production database,
+  so the tests that verify stored production data skip.
+- **Fix needed for that:**
+  `tests/test_evaluate/test_fast_concordance.py::real_test_data` read the
+  production database without a skip. It now skips like the other
+  production-data tests.
+- **Simulated locally before pushing:** a clean copy with no `.env` and no
+  `data/` gave 142 passed and 11 skipped.

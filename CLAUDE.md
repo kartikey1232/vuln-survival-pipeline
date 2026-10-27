@@ -88,6 +88,13 @@ to follow; STATUS.md is the longer narrative.
 - `docs/model_comparison.md` — original-encoding model numbers (marked)
 - `docs/results_corrected_labels.md` — every test metric recomputed with the 18
   KEV-relabelled test rows, beside the recorded value (generated; do not edit)
+- `results/corrected_labels/` — the committed record behind it
+  (`corrected.json`, `stored.json`, `comparison.json`), each stamped with the
+  commit it was generated at; regenerate with
+  `scripts/evaluate/corrected_labels.py` from a clean tree only
+- `scripts/results/` — `vsp results`: prints that record for presentation.
+  No number may be hardcoded there (a test enforces it); every value comes
+  from the record, and `vsp results --check` verifies the output
 - `docs/backups.md` — database dumps: path, sha256, verification
 - `docs/enrichment_leakage.md` — the leakage investigation writeup
 - `database/schema.sql` + `database/models.py` — must always match each
@@ -99,5 +106,7 @@ to follow; STATUS.md is the longer narrative.
 - `uv run pytest -q` — full test suite (~70s, of which ~60s is the fuzzy-layer
   grids in `tests/test_fuzzy/`; hits the real test DB)
 - `uv run python -m scripts.<module.path>` — run any pipeline/model script
+- `uv run vsp results [--section NAME] [--check]` — final results as tables
+  (from the corrected-labels record); `--check` runs in CI with the suite
 - `uv run alembic upgrade head` — apply migrations to the prod DB (then
   apply the equivalent DDL by hand to the test DB — see rule 6)

@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vsp_user
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: vuln_survival_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The test database is the service above. There is no production
+      # database in CI (DB_NAME does not exist), so the tests that verify
+      # stored production data skip; everything else runs.
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: vsp_user
+      DB_PASSWORD: ci-only-password
+      DB_NAME: vuln_survival
+      TEST_DB_NAME: vuln_survival_test
+      NVD_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - run: uv sync --frozen
+      # The presentation output must agree with the committed record.
+      - name: vsp results --check
+        run: uv run vsp results --check
+      - name: Test suite
+        run: uv run pytest -q

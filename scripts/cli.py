@@ -236,6 +236,24 @@ def db_migrate(message: str = typer.Option(..., help="Alembic revision message")
     command.upgrade(alembic_cfg, "head")
 
 
+# --- results ---------------------------------------------------------------
+
+
+@app.command("results")
+def results(
+    section: list[str] = typer.Option(
+        None, "--section", help="Print only this section (repeatable): headline, models, budget, rolling, "
+        "blindspot, negatives, fuzzy, sensitivity. Default: all, in that order."),
+    check: bool = typer.Option(False, "--check", help="Verify every printed value against the record; "
+                               "exit non-zero on any disagreement."),
+) -> None:
+    """Print the final results (the corrected-labels record) as tables. Reads
+    one committed file; no database, network or recomputation."""
+    from scripts.results.cli import main
+
+    main(sections=section or None, check=check)
+
+
 # --- pipeline ---------------------------------------------------------------
 
 

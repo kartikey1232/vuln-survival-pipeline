@@ -219,6 +219,32 @@ recomputes every test metric with those labels corrected, beside the recorded va
   file.
 - **The original record is kept:** `docs/final_results.md` is unchanged.
 
+### Presenting the results: `vsp results`
+
+```sh
+uv run vsp results                        # every section, in order
+uv run vsp results --section headline     # one section (repeat --section for more)
+uv run vsp results --check                # verify the output against the record
+```
+
+`vsp results` prints the corrected-labels record
+(`results/corrected_labels/corrected.json`, the committed file
+`docs/results_corrected_labels.md` is generated from) as terminal tables.
+
+- **Header:** the test-set definition.
+- **Sections:** `headline`, `models`, `budget`, `rolling`, `blindspot`,
+  `negatives`, `fuzzy` and `sensitivity`.
+- **Footer:** the record file and the commit it was generated at.
+- **✓** marks a paired difference whose 95% interval excludes zero. A bound of
+  exactly zero does not count.
+- **Safe for a live demo:** it reads that one file and nothing else. There is no
+  database, network or recomputation, and it runs in about a tenth of a second.
+- **No hardcoded numbers:** a test fails if the formatting code holds any number
+  other than a budget threshold.
+- **`--check`:** re-reads the record and verifies every printed value against it
+  through an independent mapping. It exits non-zero on any disagreement and runs
+  in CI next to the test suite.
+
 ## Limitations
 
 The full list is in `docs/final_results.md` § Limitations. The most important:
@@ -281,6 +307,7 @@ cp .env.example .env                      # then fill in real values
 # create the role and database named in .env, e.g.:
 createuser -P vsp_user
 createdb -O vsp_user vuln_survival
+createdb -O vsp_user vuln_survival_test   # for the test suite
 
 uv run vsp db init                        # applies database/schema.sql (idempotent)
 ```
@@ -373,14 +400,18 @@ time.
 ## Tests
 
 ```sh
-uv run pytest -q          # 131 tests, ~2.5 min
+uv run pytest -q          # ~2.5 min with the production database
 ```
 
-- **Where they run:** against a real PostgreSQL test database
-  (`vuln_survival_test`, created and dropped by `tests/conftest.py`). There are no
-  mocks and no SQLite.
-- **Production-database tests:** tests marked `slow` read the *production* database
-  read-only to verify stored data, and skip if it is unavailable.
+CI (`.github/workflows/ci.yml`) runs `vsp results --check` and the suite on every
+push, against a Postgres service.
+
+- **Where they run:** against a real PostgreSQL test database (`TEST_DB_NAME`,
+  default `vuln_survival_test`). It must exist; `tests/conftest.py` applies the
+  schema to it and empties every table between tests. There are no mocks and no
+  SQLite.
+- **Production-database tests:** some tests read the *production* database
+  read-only to verify stored data, and skip if it is unavailable (as in CI).
 - **What they cover:**
   - temporal-leakage proofs and the feature allowlist (`tests/test_leakage/`);
   - holdout disjointness, checked both by the constraint and on the stored rows;
@@ -398,7 +429,7 @@ uv run pytest -q          # 131 tests, ~2.5 min
 |---|---|
 | [`docs/final_results.md`](docs/final_results.md) | **Every reported number**, with limitations. Start here. |
 | [`docs/STATUS.md`](docs/STATUS.md) | Narrative status: every design decision with its reasoning, open items |
-| [`docs/results_corrected_labels.md`](docs/results_corrected_labels.md) | All test metrics with the 18 relabelled rows, beside the recorded values (generated) |
+| [`docs/results_corrected_labels.md`](docs/results_corrected_labels.md) | All test metrics with the 18 relabelled rows, beside the recorded values (generated from `results/corrected_labels/`; printed by `vsp results`) |
 | [`docs/enrichment_leakage.md`](docs/enrichment_leakage.md) | The selection-leakage investigation and the own-CNA rule |
 | [`docs/robustness.md`](docs/robustness.md) | Sensitivity subsets, RSF variance, calibration tests |
 | [`docs/rolling_origin.md`](docs/rolling_origin.md), [`docs/lead_time.md`](docs/lead_time.md) | Methods for those analyses |
